@@ -8,7 +8,6 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 2. **Off-peak share and saving**: how much home charging fell in the off-peak window, and what it would have cost at the peak rate. Uses the off-peak rates from the Charging tab or the live price recorded per session. *(evcc's cheapest-slot planning, turned into a report.)*
 3. **Day-by-day timeline** of trips and stops (the heat map part is done). *(TeslaMate "visited" dashboard.)*
 4. **Charging curve** for rapid charges: store power samples during a session and plot power against battery %. *(TeslaMate charge detail.)* Needs more frequent data than the car may send.
-5. **HACS default list**: requested; waiting for review.
 
 ## Not planned
 
@@ -43,3 +42,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] Without a charger meter, home kWh and costs come from the car's charging power over the session instead of battery % (0.22)
 - [x] "Where you go" heat map of trip ends on the overview; battery size pre-filled from the car model at setup (0.23)
 - [x] Rename cars under Configure; heat map grouped by place with log weighting so busy places don't drown out the rest (0.24)
+- [x] In the HACS default list (25 Oct 2026)

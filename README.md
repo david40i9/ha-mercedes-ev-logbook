@@ -10,10 +10,10 @@
 
 <p align="center">
   <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/releases"><img src="https://img.shields.io/github/v/release/david40i9/ha-mercedes-ev-logbook?style=flat-square&label=release" alt="release"></a>
-  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square" alt="HACS custom"></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=david40i9&repository=ha-mercedes-ev-logbook&category=integration"><img src="https://img.shields.io/badge/HACS-default-41BDF5?style=flat-square" alt="HACS default"></a>
   <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/actions/workflows/validate.yml"><img src="https://img.shields.io/github/actions/workflow/status/david40i9/ha-mercedes-ev-logbook/validate.yml?style=flat-square&label=validation" alt="validation"></a>
   <img src="https://img.shields.io/badge/Home%20Assistant-2026.3%2B-18BCF2?style=flat-square" alt="Home Assistant 2026.3+">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-MIT-97CA00?style=flat-square" alt="MIT licence"></a>
+  <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/blob/main/LICENSE"><img src="https://img.shields.io/badge/licence-MIT-97CA00?style=flat-square" alt="MIT licence"></a>
 </p>
 
 <p align="center">
@@ -70,9 +70,11 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 ## Install
 
-1. In **HACS**, open the ⋮ menu → **Custom repositories**, add `https://github.com/david40i9/ha-mercedes-ev-logbook` with type **Integration**.
-2. Find **Mercedes EV Logbook** in HACS, select **Download**, then restart Home Assistant.
-3. Go to **Settings → Devices & services → Add integration → Mercedes EV Logbook** and pick your car.
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=david40i9&repository=ha-mercedes-ev-logbook&category=integration)
+
+1. In **HACS**, search for **Mercedes EV Logbook** (or use the button above).
+2. Select **Download**, then restart Home Assistant.
+3. Go to **Settings → Devices & services → Add integration → Mercedes EV Logbook** ([open it](https://my.home-assistant.io/redirect/config_flow_start/?domain=mb_logbook)) and pick your car.
 
 <details>
 <summary>Manual install</summary>
@@ -186,8 +188,8 @@ This integration depends entirely on [MercedesME 2020 (mbapi2020)](https://githu
 
 ## Contributing
 
-Bug reports and ideas are welcome in [Issues](https://github.com/david40i9/ha-mercedes-ev-logbook/issues). Planned work is in [TODO.md](TODO.md).
+Bug reports and ideas are welcome in [Issues](https://github.com/david40i9/ha-mercedes-ev-logbook/issues). Planned work is in [TODO.md](https://github.com/david40i9/ha-mercedes-ev-logbook/blob/main/TODO.md).
 
 ---
 
-**Not affiliated with Mercedes-Benz.** This is an independent community project. Mercedes-Benz and EQ are trademarks of Mercedes-Benz Group AG, used here only to say which cars it works with. Licensed under the [MIT licence](LICENSE).
+**Not affiliated with Mercedes-Benz.** This is an independent community project. Mercedes-Benz and EQ are trademarks of Mercedes-Benz Group AG, used here only to say which cars it works with. Licensed under the [MIT licence](https://github.com/david40i9/ha-mercedes-ev-logbook/blob/main/LICENSE).
