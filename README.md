@@ -37,7 +37,7 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 | 🚗 **Trips** | Start and end, distance, battery used, kWh, efficiency, outside temperature and the route on a map |
 | 🅿️ **Parked drain** | What the car lost between trips, and an idle-drain sensor in % per day |
 | ⚡ **Charging** | Every session with kWh, peak power and cost, from your own rates per place (with an optional off-peak window) or a live price sensor; rate history keeps old costs right |
-| 🏷️ **Mileage claims** | Business / Commute / Personal labels, a default label per place, mileage by label and CSV export |
+| 🏷️ **Mileage claims** | Business / Commute / Personal labels, a default label per place, column filters, mileage by label and CSV export |
 | 📍 **Your own places** | Name any stop with a draggable, resizable circle; the name reaches back through all your history |
 | 🔥 **Where you go** | A heat map of every stop: by month, 3 months, year or all time |
 | 🔋 **Battery health** | The range the car predicts at 100%, month by month |
@@ -117,7 +117,7 @@ Any car that provides these entities works, not only Mercedes. Pick them yoursel
 
 **Sidebar page.** *Overview* shows this month against last; mileage by label for any week, month, 3 months or year; 12-month charts of distance, energy, charging cost and efficiency; battery health; efficiency against outside temperature; this month's routes; your most-visited places; and a heat map of where you go. *Logbook* is the full card for the selected car.
 
-**Trips.** Click a trip to see its route. Choose a label from the dropdown, or give a place a default label (Places tab) and trips there are labelled automatically. Filter by label and the totals follow; **Export CSV** saves the trips shown.
+**Trips.** Click a trip to see its route. Choose a label from the dropdown, or give a place a default label (Places tab) and trips there are labelled automatically. Filter with the dropdowns under the column headers (place, label, distance, charged or not) or the label buttons; the totals follow, and **Export CSV** saves the trips shown. The Charging tab filters the same way, by place (or home / away) and how each charge was costed.
 
 **Places.** A stop outside your Home Assistant zones shows as *unnamed · name it*. Name it and drag the circle to fit; every past and future trip or charge there takes the name. Press **Suggest names** for nearby shops and venues from OpenStreetMap.
 

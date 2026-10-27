@@ -43,3 +43,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] "Where you go" heat map of trip ends on the overview; battery size pre-filled from the car model at setup (0.23)
 - [x] Rename cars under Configure; heat map grouped by place with log weighting so busy places don't drown out the rest (0.24)
 - [x] In the HACS default list (24 Oct 2026); README shown in HACS updated (0.24.1)
+- [x] Column filters on Trips (place, label, distance, charged) and Charging (place, home/away, cost basis); totals and CSV follow them (0.25)

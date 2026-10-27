@@ -5,6 +5,8 @@
 const KM_PER_MI = 1.609344;
 // Where a charging session's kWh came from (best first).
 const SRC = { meter: "metered", power: "from charging power", battery: "from battery %" };
+// Trip distance filter bands, in the car's unit: [value, label, from, below]
+const DIST_BANDS = [["s", "Under 5", 0, 5], ["m", "5 – 25", 5, 25], ["l", "25 – 100", 25, 100], ["xl", "100+", 100, Infinity]];
 // Calendar periods; the arrows step back and forward by one period.
 const PERIODS = [
   ["week", "Week"],
@@ -25,6 +27,7 @@ class MBLogbookCard extends HTMLElement {
       PERIODS.find(([p]) => p === this._config.period)?.[0] || DAYS_TO_PERIOD[this._config.days] || "month";
     this._offset = 0; // 0 = the current period, 1 = the one before, ...
     this._labelFilter = "all";
+    this._cf = { trips: {}, charges: {} }; // column filters: tab -> { column: chosen value }
     this._sort = {}; // tab -> { key, dir }, unset = the default order
     this._tab = "trips";
     this._open = null;
@@ -502,7 +505,7 @@ class MBLogbookCard extends HTMLElement {
   }
 
   _chargeTiles() {
-    const ch = this._charges;
+    const ch = this._shownCharges;
     const kwh = ch.reduce((s, c) => s + (c.kwh ?? c.kwh_meter ?? c.kwh_car ?? 0), 0);
     // Costed charges: metered at home, or at a charging place's rate (free counts as 0).
     const costed = ch.filter((c) => c.cost != null);
@@ -547,12 +550,78 @@ class MBLogbookCard extends HTMLElement {
 
   // ----- tables -----------------------------------------------------------------------
 
-  /** Trips after the label filter. */
+  /** Trips after the label filter and the column filters. */
   get _shownTrips() {
     const f = this._labelFilter || "all";
-    if (f === "all") return this._trips;
-    if (f === "__none") return this._trips.filter((t) => !t.label);
-    return this._trips.filter((t) => t.label === f);
+    const { route, dist, park } = this._cf.trips;
+    const k = this._miles ? 1 / KM_PER_MI : 1;
+    return this._trips.filter((t) => {
+      if (f === "__none" ? t.label : f !== "all" && t.label !== f) return false;
+      if (route && !(route === "__none" ? !t.start_place || !t.end_place : t.start_place === route || t.end_place === route)) return false;
+      if (dist) {
+        const [lo, hi] = DIST_BANDS.find(([v]) => v === dist).slice(2);
+        const d = t.distance_km * k;
+        if (d < lo || d >= hi) return false;
+      }
+      if (park && (park === "charged") !== !!t.park_charged) return false;
+      return true;
+    });
+  }
+
+  /** Charges after the column filters. */
+  get _shownCharges() {
+    const { where, cost } = this._cf.charges;
+    return this._charges.filter((c) => {
+      if (where === "__home" ? !c.at_home : where === "__away" ? c.at_home : where === "__none" ? c.place : where && c.place !== where) return false;
+      if (cost && (c.cost_source || (c.cost == null ? "none" : "")) !== cost) return false;
+      return true;
+    });
+  }
+
+  get _filtering() {
+    return this._tab === "charges"
+      ? Object.values(this._cf.charges).some(Boolean)
+      : this._labelFilter !== "all" || Object.values(this._cf.trips).some(Boolean);
+  }
+
+  /** A row of dropdowns under the column headers; [] for a column without one. */
+  _filterRow(cols) {
+    const cells = cols.map(([key, all, opts, num]) => {
+      if (!key) return "<th></th>";
+      const cur = key === "label" ? (this._labelFilter === "all" ? "" : this._labelFilter) : this._cf[this._tab][key] || "";
+      return `<th${num ? " class=n" : ""}><select class="cf ${cur ? "on" : ""}" data-cf="${key}" title="Filter this column">
+          <option value="">${esc(all)}</option>
+          ${opts.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}
+        </select></th>`;
+    });
+    return `<tr class=filters>${cells.join("")}</tr>`;
+  }
+
+  _tripFilterRow() {
+    const unit = this._miles ? "mi" : "km";
+    const places = [...new Set(this._trips.flatMap((t) => [t.start_place, t.end_place]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const labels = [...new Set(this._trips.map((t) => t.label).filter(Boolean))];
+    return this._filterRow([
+      [],
+      ["route", "Any place", [...places.map((p) => [p, `To or from ${p}`]), ["__none", "Unnamed places"]]],
+      ["label", "Any label", [...labels.map((l) => [l, l]), ["__none", "Unlabelled"]]],
+      ["dist", "Any distance", DIST_BANDS.map(([v, l]) => [v, `${l} ${unit}`]), 1],
+      [], [], [],
+      ["park", "Any park", [["charged", "Charged"], ["notcharged", "Not charged"]], 1],
+      [],
+    ]);
+  }
+
+  _chargeFilterRow() {
+    const places = [...new Set(this._charges.map((c) => c.place).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const bases = [["meter", "Metered"], ["power", "Live price"], ["rate", "Place rate"], ["free", "Free"], ["none", "No rate"]];
+    return this._filterRow([
+      [],
+      ["where", "Anywhere", [["__home", "At home"], ["__away", "Away from home"], ...places.map((p) => [p, p]), ["__none", "Unnamed places"]]],
+      [], [], [],
+      ["cost", "Any cost", bases.filter(([v]) => this._charges.some((c) => (c.cost_source || (c.cost == null ? "none" : "")) === v)), 1],
+      [],
+    ]);
   }
 
   _labelCell(x) {
@@ -579,6 +648,7 @@ class MBLogbookCard extends HTMLElement {
     return `<div class=labelbar>
         <div class=seg>${filters.map(([v, l]) => `<button data-lfilter="${esc(v)}" class="${v === f ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
         <span class=dim>${byLabel}</span>
+        ${this._filtering ? `<button class=cfclear title="Show all trips again">Clear filters</button>` : ""}
         <button class=csv title="Download the trips shown, for mileage claims">Export CSV</button>
       </div>`;
   }
@@ -613,7 +683,7 @@ class MBLogbookCard extends HTMLElement {
     const loc = this._hass.locale?.language;
     const cur = this._cur;
     const rows = [["Date", "Start time", "End time", "Place", "Latitude", "Longitude", "Battery start %", "Battery end %", "Energy (kWh)", "Energy source", "Peak power (kW)", `Cost (${cur})`, "Cost basis", `Per kWh (${cur})`]];
-    for (const c of [...this._charges].sort((a, b) => a.start_ts - b.start_ts)) {
+    for (const c of [...this._shownCharges].sort((a, b) => a.start_ts - b.start_ts)) {
       const s = new Date(c.start_ts * 1000);
       const e = new Date(c.end_ts * 1000);
       const kwh = c.kwh ?? c.kwh_meter ?? c.kwh_car;
@@ -690,7 +760,7 @@ class MBLogbookCard extends HTMLElement {
 
   _tripRows() {
     const trips = this._shownTrips;
-    if (!trips.length) return `<tr><td colspan=9 class=empty>No trips${this._labelFilter !== "all" ? " with this label" : ""} in this period.</td></tr>`;
+    if (!trips.length) return `<tr><td colspan=9 class=empty>No trips${this._filtering ? " matching the filters" : ""} in this period.</td></tr>`;
     // Newest first, with each charge placed between the trips it fell between
     // (charges only when not filtering by label).
     // A column sort drops the charge lines, which only make sense in time order.
@@ -707,7 +777,7 @@ class MBLogbookCard extends HTMLElement {
         }).map((x) => ({ trip: x }))
       : [
           ...trips.map((x) => ({ ts: x.start_ts, trip: x })),
-          ...(this._labelFilter === "all" ? this._charges : []).map((c) => ({ ts: c.start_ts, charge: c })),
+          ...(this._filtering ? [] : this._charges).map((c) => ({ ts: c.start_ts, charge: c })),
         ].sort((a, b) => b.ts - a.ts);
     return items
       .map(({ trip: x, charge }) => {
@@ -743,8 +813,9 @@ class MBLogbookCard extends HTMLElement {
   }
 
   _chargeRows() {
-    if (!this._charges.length) return `<tr><td colspan=7 class=empty>No charging sessions in this period.</td></tr>`;
-    return this._sorted(this._charges, {
+    const shown = this._shownCharges;
+    if (!shown.length) return `<tr><td colspan=7 class=empty>No charging sessions${this._filtering ? " matching the filters" : ""} in this period.</td></tr>`;
+    return this._sorted(shown, {
       start: (c) => c.start_ts,
       where: (c) => c.place || null,
       soc: (c) => (c.soc_start != null && c.soc_end != null ? c.soc_end - c.soc_start : null),
@@ -795,11 +866,12 @@ class MBLogbookCard extends HTMLElement {
     const tabs = `<div class=seg>${[["trips", "Trips"], ["charges", "Charging"], ["places", "Places"]]
       .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}</button>`)
       .join("")}</div>`;
+    const clear = this._filtering ? `<button class=cfclear title="Show all rows again">Clear filters</button>` : "";
     const table =
       this._tab === "trips"
-        ? `${this._labelBar()}<table><thead><tr>${this._th("start", "Start")}${this._th("route", "Route")}${this._th("label", "Label")}${this._th("dist", "Distance", 1)}${this._th("used", "Battery", 1)}${this._th("kwh", "Used", 1)}${this._th("eff", "Efficiency", 1)}${this._th("park", "Parked before", 1)}<th></th></tr></thead><tbody>${this._tripRows()}</tbody></table>`
+        ? `${this._labelBar()}<table><thead><tr>${this._th("start", "Start")}${this._th("route", "Route")}${this._th("label", "Label")}${this._th("dist", "Distance", 1)}${this._th("used", "Battery", 1)}${this._th("kwh", "Used", 1)}${this._th("eff", "Efficiency", 1)}${this._th("park", "Parked before", 1)}<th></th></tr>${this._trips.length ? this._tripFilterRow() : ""}</thead><tbody>${this._tripRows()}</tbody></table>`
         : this._tab === "charges"
-          ? `${this._charges.length ? `<div class=labelbar><button class="csv csvc" title="Download the charging sessions shown">Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr></thead><tbody>${this._chargeRows()}</tbody></table>
+          ? `${this._charges.length ? `<div class=labelbar>${clear}<button class="csv csvc" title="Download the charging sessions shown">Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr>${this._charges.length ? this._chargeFilterRow() : ""}</thead><tbody>${this._chargeRows()}</tbody></table>
              ${this._rateSection()}`
           : `<table><thead><tr>${this._th("name", "Name")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
              <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.</div>
@@ -936,6 +1008,21 @@ class MBLogbookCard extends HTMLElement {
         this._render();
       })
     );
+    root.querySelectorAll("select.cf").forEach((s) =>
+      s.addEventListener("change", () => {
+        if (s.dataset.cf === "label") this._labelFilter = s.value || "all";
+        else this._cf[this._tab][s.dataset.cf] = s.value || undefined;
+        this._open = null;
+        this._naming = null;
+        this._render();
+      })
+    );
+    root.querySelector("button.cfclear")?.addEventListener("click", () => {
+      if (this._tab === "trips") this._labelFilter = "all";
+      this._cf[this._tab] = {};
+      this._open = null;
+      this._render();
+    });
     root.querySelector("button.csv:not(.csvc)")?.addEventListener("click", () => this._exportCsv());
     root.querySelector("button.csvc")?.addEventListener("click", () => this._exportChargesCsv());
     root.querySelectorAll("select.tlabel").forEach((s) => {
@@ -1167,6 +1254,11 @@ MBLogbookCard.css = `
   table { width: 100%; border-collapse: collapse; font-size: .9em; }
   th { text-align: left; font-weight: 500; color: var(--secondary-text-color); padding: 6px; border-bottom: 1px solid var(--divider-color); white-space: nowrap; }
   th.sort { cursor: pointer; user-select: none; }
+  tr.filters th { padding-top: 0; font-weight: normal; }
+  select.cf { width: 100%; max-width: 160px; font: inherit; font-size: .8em; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--secondary-text-color); }
+  select.cf.on { border-color: var(--primary-color); color: var(--primary-color); }
+  button.cfclear { margin-left: auto; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--primary-color); background: none; color: var(--primary-color); font: inherit; font-size: .9em; cursor: pointer; }
+  .labelbar .cfclear + .csv { margin-left: 0; }
   th.sort:hover, th.sort.on { color: var(--primary-color); }
   td { padding: 6px; border-bottom: 1px solid var(--divider-color); vertical-align: top; }
   .n { text-align: right; white-space: nowrap; }
@@ -1194,7 +1286,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.24.1";
+const CARD_VERSION = "0.25.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
