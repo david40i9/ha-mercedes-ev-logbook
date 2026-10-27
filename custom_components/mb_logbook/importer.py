@@ -36,7 +36,6 @@ from .const import (
     DEFAULT_MIN_DISTANCE_KM,
     DEFAULT_STOP_MINUTES,
     IGNITION_OFF,
-    MAX_METER_STEP_KWH,
     UNKNOWN_STATES,
 )
 from . import rules
@@ -190,6 +189,7 @@ class _Replay:
             "at_home": zone_id == self.conf.get(CONF_HOME_ZONE, DEFAULT_HOME_ZONE),
             "kwh_meter": 0.0,
             "cost": 0.0,
+            "priced_kwh": 0.0,
             "max_power_kw": 0.0,
             "last_ts": ts,
         }
@@ -208,9 +208,10 @@ class _Replay:
             else None
         )
         meter = c["kwh_meter"]
-        if meter <= 0 and (kwh_car is None or kwh_car <= 0):
-            return
         rules.add_power_sample(c, c.get("off_ts", c["last_ts"]), 0.0, None)
+        kwh_power = (c.get("kwh_power") or 0.0) if c["at_home"] else 0.0
+        if meter <= 0 and kwh_power <= 0 and (kwh_car is None or kwh_car <= 0):
+            return
         cost, basis = rules.charge_cost(c, bool(self.conf.get(CONF_PRICE)))
         self.charges.append(
             {
@@ -221,7 +222,7 @@ class _Replay:
                 "soc_end": soc_end,
                 "kwh_car": kwh_car,
                 "kwh_meter": round(meter, 3) if meter > 0 else None,
-                "kwh_power": round(c["kwh_power"], 3) if c["at_home"] and (c.get("kwh_power") or 0) > 0 else None,
+                "kwh_power": round(kwh_power, 3) if kwh_power > 0 else None,
                 "cost": cost,
                 "cost_basis": basis,
                 "max_power_kw": c["max_power_kw"] or None,
@@ -311,8 +312,9 @@ class _Replay:
             if st.state == "on":
                 if self.charge is None:
                     self.start_charge(ts)
-                else:
-                    self.charge.pop("off_ts", None)
+                elif self.charge.pop("off_ts", None) is not None and c.get(CONF_CHARGE_POWER):
+                    # Resumed within the gap: the live logger's rule.
+                    rules.add_power_sample(self.charge, ts, self._val(CONF_CHARGE_POWER) or 0.0, self._price())
             elif self.charge is not None and "off_ts" not in self.charge:
                 self.charge["off_ts"] = ts
                 rules.add_power_sample(self.charge, ts, 0.0, self._price())
@@ -322,13 +324,21 @@ class _Replay:
         elif eid == c.get(CONF_CHARGER_ENERGY):
             if self.charge is None or not self.charge["at_home"] or "off_ts" in self.charge:
                 return
-            o, n = _num(old), _num(st)
-            if o is None or n is None or not 0 < n - o <= MAX_METER_STEP_KWH:
+            n = _num(st)
+            if n is None:
+                return  # unavailable: measure across it from the last good reading
+            o = self.charge.get("meter_last")
+            if o is None:
+                o = _num(old)
+            step = rules.meter_step(o, n, ts - self.charge.get("meter_last_ts", ts))
+            self.charge["meter_last"], self.charge["meter_last_ts"] = n, ts
+            if step <= 0:
                 return
-            self.charge["kwh_meter"] += n - o
+            self.charge["kwh_meter"] += step
             price = self._price()
             if price is not None:
-                self.charge["cost"] += (n - o) * price
+                self.charge["cost"] += step * price
+                self.charge["priced_kwh"] += step
             self.charge["last_ts"] = ts
         elif eid == c.get(CONF_CHARGE_POWER):
             if self.charge is not None:

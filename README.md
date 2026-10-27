@@ -177,6 +177,8 @@ Data is stored in `config/mb_logbook.db` (SQLite), which is included in Home Ass
 
 Everything stays in Home Assistant. Places are named from your own zones and the places you name. The one exception is optional: **Suggest names** sends the single point you are naming to OpenStreetMap's Photon service (falling back to the Overpass API), only when you press it. Route maps use Home Assistant's own map component and tiles.
 
+Everyone with a login to your Home Assistant can open the logbook page and see trips, routes and charges. Only administrators can change or delete anything.
+
 ## Limits
 
 - Mercedes reports battery % in whole numbers, so kWh for short trips is approximate (1% of a large battery is about 1 kWh).
@@ -189,6 +191,14 @@ This integration depends entirely on [MercedesME 2020 (mbapi2020)](https://githu
 ## Contributing
 
 Bug reports and ideas are welcome in [Issues](https://github.com/david40i9/ha-mercedes-ev-logbook/issues). Planned work is in [TODO.md](https://github.com/david40i9/ha-mercedes-ev-logbook/blob/main/TODO.md).
+
+The tests run Home Assistant itself with a simulated car (trips, charging, restarts, the history import and the card's commands). They need Python 3.14:
+
+```bash
+pip install -r requirements_test.txt
+ruff check .
+pytest
+```
 
 ---
 

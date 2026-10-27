@@ -150,11 +150,14 @@ def _offpeak_share(start_ts: float, end_ts: float, start: str, end: str) -> floa
     last = dt_util.as_local(dt_util.utc_from_timestamp(end_ts)).date()
     inside = 0.0
     day = first
+    tz = dt_util.get_default_time_zone()
+    crosses_midnight = (eh, em) <= (sh, sm)
     while day <= last:
-        w0 = datetime.combine(day, time(sh, sm), dt_util.get_default_time_zone()).timestamp()
-        w1 = datetime.combine(day, time(eh, em), dt_util.get_default_time_zone()).timestamp()
-        if w1 <= w0:
-            w1 += 86400
+        w0 = datetime.combine(day, time(sh, sm), tz).timestamp()
+        # Build the end from the next day's date, not w0 + 24 h: the night the
+        # clocks change is 23 or 25 hours long.
+        end_day = day + timedelta(days=1) if crosses_midnight else day
+        w1 = datetime.combine(end_day, time(eh, em), tz).timestamp()
         inside += max(0.0, min(end_ts, w1) - max(start_ts, w0))
         day += timedelta(days=1)
     return min(1.0, inside / (end_ts - start_ts))
@@ -654,15 +657,17 @@ class LogbookDB:
             "charge_cost": sum((c.get("cost") or 0) for c in ch),
         }
 
-    def idle_parks(self, car: str, since_ts: float, min_hours: float) -> list[tuple]:
-        """(hours, soc_drop) for uncharged parks that ended after since_ts."""
+    def idle_parks(
+        self, car: str, since_ts: float, min_hours: float, until_ts: float = 1e12
+    ) -> list[tuple]:
+        """(hours, soc_drop) for uncharged parks that ended between since_ts and until_ts."""
         # Drain is measured after any charge (park_drain_hours); rows from before
         # that column existed only count when the park had no charge.
         rows = self._exec(
             "SELECT COALESCE(park_drain_hours, park_hours) AS h, park_soc_drop FROM trips "
-            "WHERE car = ? AND start_ts >= ? AND park_soc_drop IS NOT NULL "
+            "WHERE car = ? AND start_ts >= ? AND start_ts < ? AND park_soc_drop IS NOT NULL "
             "AND (park_drain_hours IS NOT NULL OR park_charged = 0) "
             "AND COALESCE(park_drain_hours, park_hours) >= ?",
-            (car, since_ts, min_hours),
+            (car, since_ts, until_ts, min_hours),
         )
         return [(r["h"], r["park_soc_drop"]) for r in rows]

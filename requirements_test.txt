@@ -1,0 +1,4 @@
+# Test dependencies (Python 3.14). Pins track the Home Assistant release the tests run against.
+pytest-homeassistant-custom-component==0.13.375
+home-assistant-frontend==20260930.5
+ruff==0.17.3
