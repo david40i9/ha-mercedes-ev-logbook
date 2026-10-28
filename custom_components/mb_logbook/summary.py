@@ -49,7 +49,7 @@ async def async_build(hass: HomeAssistant, logger: CarLogger, now: datetime) -> 
     start, end = _last_month(now)
     db = logger.db
     t = await hass.async_add_executor_job(db.totals, logger.car_id, start.timestamp(), end.timestamp())
-    parks = await hass.async_add_executor_job(db.idle_parks, logger.car_id, start.timestamp(), IDLE_MIN_HOURS)
+    parks = await hass.async_add_executor_job(db.idle_parks, logger.car_id, start.timestamp(), IDLE_MIN_HOURS, end.timestamp())
     miles = conf.get(CONF_DISTANCE_UNIT) == UNIT_MI
     k = 1 / KM_PER_MI if miles else 1
     unit = "mi" if miles else "km"

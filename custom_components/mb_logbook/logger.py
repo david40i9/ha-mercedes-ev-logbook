@@ -50,7 +50,6 @@ from .const import (
     DOMAIN,
     IGNITION_OFF,
     KM_PER_MI,
-    MAX_METER_STEP_KWH,
     SIGNAL_UPDATED,
     STORAGE_VERSION,
     UNKNOWN_STATES,
@@ -215,6 +214,11 @@ class CarLogger:
         for timer in (self._end_timer, self._stale_timer, self._charge_end_timer):
             if timer:
                 timer()
+        charge = self._state.get("charge")
+        if charge and "off_ts" not in charge and charge.get("pw_last"):
+            # Still charging as we stop: count the power up to now, so if it ends
+            # while we're down, the session ends here rather than at the last change.
+            rules.add_power_sample(charge, time.time(), None, self._price())
         await self._store.async_save(self._state)
 
     @callback
@@ -247,10 +251,20 @@ class CarLogger:
             self._schedule_trip_end(max(0.0, last + stop - time.time()))
         if self.conf.get(CONF_CHARGING):
             chg = self.hass.states.get(self.conf[CONF_CHARGING])
-            on = chg is not None and chg.state == "on"
-            if on and not self._state.get("charge"):
+            charge = self._state.get("charge")
+            if chg is None or chg.state in UNKNOWN_STATES:
+                # The car's sensors are often unavailable for a while after a restart;
+                # that says nothing about charging. Wait for a real state.
+                pass
+            elif chg.state == "on" and not charge:
                 self._start_charge()
-            elif not on and self._state.get("charge"):
+            elif chg.state != "on" and charge:
+                if "off_ts" not in charge:
+                    # It stopped while Home Assistant was down: end it at the last thing
+                    # we saw, so the downtime isn't counted as charging.
+                    last = charge.get("pw_last")
+                    charge["off_ts"] = max(charge.get("last_ts") or 0, last[0] if last else 0) or charge["start_ts"]
+                    rules.add_power_sample(charge, charge["off_ts"], 0.0, None)
                 self._schedule_charge_end(0)
         if "park" not in self._state:
             self._state["park"] = self._park_snapshot()
@@ -557,8 +571,11 @@ class CarLogger:
                 self._charge_end_timer = None
             if not charge:
                 self._start_charge()
-            else:
-                charge.pop("off_ts", None)
+            elif charge.pop("off_ts", None) is not None and self.conf.get(CONF_CHARGE_POWER):
+                # Resumed within the gap: power flows again at the current reading,
+                # which may not change (and so send no event) after the pause.
+                power = _num(self.hass.states.get(self.conf[CONF_CHARGE_POWER]))
+                rules.add_power_sample(charge, time.time(), power or 0.0, self._price())
         elif charge:
             charge.setdefault("off_ts", time.time())  # when it really stopped
             # No power flows while stopped (in case charging resumes within the gap).
@@ -579,6 +596,7 @@ class CarLogger:
             "at_home": self._at_home(),
             "kwh_meter": 0.0,
             "cost": 0.0,
+            "priced_kwh": 0.0,
             "max_power_kw": 0.0,
         }
         # Start the power integration with the current reading, if any.
@@ -618,12 +636,13 @@ class CarLogger:
             else None
         )
         meter = charge.get("kwh_meter") or 0.0
-        if meter <= 0 and (kwh_car is None or kwh_car <= 0):
+        # Close the power integration at the moment charging stopped.
+        rules.add_power_sample(charge, charge.get("off_ts") or time.time(), 0.0, None)
+        kwh_power = (charge.get("kwh_power") or 0.0) if charge.get("at_home") else 0.0
+        if meter <= 0 and kwh_power <= 0 and (kwh_car is None or kwh_car <= 0):
             self._save()
             self._notify()
             return  # nothing was actually added
-        # Close the power integration at the moment charging stopped.
-        rules.add_power_sample(charge, charge.get("off_ts") or time.time(), 0.0, None)
         cost, basis = rules.charge_cost(charge, bool(self.conf.get(CONF_PRICE)))
         record = {
             "car": self.car_id,
@@ -633,7 +652,7 @@ class CarLogger:
             "soc_end": soc_end,
             "kwh_car": kwh_car,
             "kwh_meter": round(meter, 3) if meter > 0 else None,
-            "kwh_power": round(charge["kwh_power"], 3) if charge.get("at_home") and (charge.get("kwh_power") or 0) > 0 else None,
+            "kwh_power": round(kwh_power, 3) if kwh_power > 0 else None,
             "cost": cost,
             "cost_basis": basis,
             "max_power_kw": charge.get("max_power_kw") or None,
@@ -684,13 +703,15 @@ class CarLogger:
         charge = self._state.get("charge")
         if charge is None or not charge.get("at_home"):
             return
-        old = _num(event.data["old_state"])
         new = _num(event.data["new_state"])
-        if old is None or new is None:
-            return
-        step = new - old
-        if step <= 0 or step > MAX_METER_STEP_KWH:
-            return
+        if new is None:
+            return  # unavailable: measure across it from the last good reading
+        old = charge.get("meter_last")
+        if old is None:
+            old = _num(event.data["old_state"])
+        now = time.time()
+        step = rules.meter_step(old, new, now - (charge.get("meter_last_ts") or now))
+        charge["meter_last"], charge["meter_last_ts"] = new, now
         step *= self._meter_share()
         if step <= 0:
             return
@@ -700,6 +721,7 @@ class CarLogger:
         charge["kwh_meter"] = (charge.get("kwh_meter") or 0.0) + step
         if price is not None:
             charge["cost"] = (charge.get("cost") or 0.0) + step * price
+            charge["priced_kwh"] = (charge.get("priced_kwh") or 0.0) + step
         charge["last_ts"] = time.time()
         self._save()
 

@@ -44,3 +44,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] Rename cars under Configure; heat map grouped by place with log weighting so busy places don't drown out the rest (0.24)
 - [x] In the HACS default list (24 Oct 2026); README shown in HACS updated (0.24.1)
 - [x] Column filters on Trips (place, label, distance, charged) and Charging (place, home/away, cost basis); totals and CSV follow them (0.25)
+- [x] Automated tests (Home Assistant with a simulated car) and a CI test job; fixes they found: power-only charges kept when the battery % lags, charges no longer cut by a restart or counted through downtime, meter readings measured across an unavailable spell, resumed charges keep counting power, no-price sessions fall back to the rate, off-peak share right on the nights the clocks change, monthly summary drain limited to the month, split trips mark a charged stop (0.25.1)

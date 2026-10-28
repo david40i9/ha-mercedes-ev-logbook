@@ -17,6 +17,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from .const import MAX_METER_STEP_KWH
+
+# The most a home charger delivers (22 kW three-phase), with headroom.
+MAX_HOME_KW = 25.0
+
 
 def new_park(ts: float, soc: float | None, charging: bool) -> dict[str, Any]:
     """Park starting when a trip ends (charging if a charge already began)."""
@@ -85,6 +90,20 @@ def add_power_sample(
     charge["pw_last"] = [ts, power_kw if power_kw is not None else (last[1] if last else 0.0), price]
 
 
+def meter_step(old: float | None, new: float, elapsed_s: float) -> float:
+    """kWh a total-energy meter added since its last good reading (0 for a glitch).
+
+    A drop means the meter reset or glitched; a jump bigger than a home charger
+    could deliver in the time since the last good reading is a glitch too. The
+    caller rebases on the new reading either way.
+    """
+    if old is None:
+        return 0.0
+    step = new - old
+    allowed = MAX_METER_STEP_KWH + MAX_HOME_KW * max(elapsed_s, 0.0) / 3600
+    return step if 0 < step <= allowed else 0.0
+
+
 def charge_cost(charge: dict[str, Any], has_price: bool) -> tuple[float | None, str | None]:
     """(cost, basis) for a finished session at the live price sensor: home meter first,
     else charging power. Without a price sensor there is no live cost (None), and the
@@ -93,6 +112,8 @@ def charge_cost(charge: dict[str, Any], has_price: bool) -> tuple[float | None, 
         return None, None
     meter = charge.get("kwh_meter") or 0.0
     if meter > 0:
+        if "priced_kwh" in charge and not charge["priced_kwh"]:
+            return None, None  # no price reading all session: cost it at the place's rate
         return round(charge.get("cost") or 0.0, 4), "meter"
     if has_price and charge.get("at_home") and (charge.get("kwh_power") or 0) > 0:
         return round(charge.get("cost_power") or 0.0, 4), "power"

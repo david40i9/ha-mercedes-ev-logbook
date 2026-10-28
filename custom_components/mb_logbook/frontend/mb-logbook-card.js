@@ -687,7 +687,7 @@ class MBLogbookCard extends HTMLElement {
       const s = new Date(c.start_ts * 1000);
       const e = new Date(c.end_ts * 1000);
       const kwh = c.kwh ?? c.kwh_meter ?? c.kwh_car;
-      const per = c.cost_source === "rate" || c.cost_source === "free" ? c.rate : c.kwh_meter && c.cost ? c.cost / c.kwh_meter : null;
+      const per = c.cost_source === "rate" || c.cost_source === "free" ? c.rate : c.kwh && c.cost ? c.cost / c.kwh : null;
       rows.push([
         s.toLocaleDateString(loc),
         s.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" }),
@@ -822,7 +822,7 @@ class MBLogbookCard extends HTMLElement {
       kwh: (c) => c.kwh ?? c.kwh_meter ?? c.kwh_car,
       peak: (c) => c.max_power_kw || null,
       cost: (c) => c.cost,
-      perkwh: (c) => (c.cost_source === "rate" || c.cost_source === "free" ? c.rate : c.kwh_meter && c.cost ? c.cost / c.kwh_meter : null),
+      perkwh: (c) => (c.cost_source === "rate" || c.cost_source === "free" ? c.rate : c.kwh && c.cost ? c.cost / c.kwh : null),
     })
       .map((c) => {
         const kwh = c.kwh ?? c.kwh_meter ?? c.kwh_car;
@@ -838,7 +838,7 @@ class MBLogbookCard extends HTMLElement {
           <td class=n>${kwh != null ? kwh.toFixed(1) + " kWh" : "–"}<div class=dim>${src}</div></td>
           <td class=n>${c.max_power_kw ? c.max_power_kw.toFixed(1) + " kW" : "–"}</td>
           <td class=n>${this._money(c.cost)}<div class=dim>${{ meter: "metered", power: "live price", rate: "place rate", free: "free" }[c.cost_source] || (c.cost == null ? "no rate" : "")}</div></td>
-          <td class=n>${c.cost_source === "rate" || c.cost_source === "free" ? this._money(c.rate, true) : c.kwh_meter && c.cost ? this._money(c.cost / c.kwh_meter, true) : ""}</td>
+          <td class=n>${c.cost_source === "rate" || c.cost_source === "free" ? this._money(c.rate, true) : c.kwh && c.cost ? this._money(c.cost / c.kwh, true) : ""}</td>
         </tr>${formRow}`;
       })
       .join("");
@@ -1286,7 +1286,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.25.0";
+const CARD_VERSION = "0.25.1";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

@@ -35,6 +35,7 @@ from .const import (
     VERSION,
     entry_conf,
 )
+from . import rules
 from .db import distance_m
 from .logger import _num, _to_km
 from .temperature import temp_c, temp_source, to_c
@@ -706,7 +707,7 @@ def _states_at(hass: HomeAssistant, ts: float, ids: list[str]) -> dict[str, Any]
 
 def _path_km(pts: list) -> float:
     return sum(
-        distance_m(a[1], a[2], b[1], b[2]) for a, b in zip(pts, pts[1:])
+        distance_m(a[1], a[2], b[1], b[2]) for a, b in zip(pts, pts[1:], strict=False)
         if None not in (a[1], a[2], b[1], b[2])
     ) / 1000
 
@@ -766,9 +767,8 @@ async def ws_split_trip(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
         "distance_km": round(total - km1, 3), "soc_start": soc2,
         "range_start_km": vals["t2"].get(CONF_RANGE), "start_lat": lat, "start_lon": lon,
         "start_place": place, "points": [[t2, lat, lon], *pts[i + 1 :]],
-        "park_hours": round(gap / 3600, 2), "park_drain_hours": round(gap / 3600, 2),
-        "park_soc_drop": soc1 - soc2 if soc1 is not None and soc2 is not None else None,
-        "park_charged": False,
+        # The stop is a park like any other: a rise in battery % means it charged.
+        **rules.park_fields(rules.new_park(t1, soc1, False), t2, soc2),
     }
     await hass.async_add_executor_job(db.replace_trip, msg["trip_id"], [leg1, leg2])
     _refresh_all(hass)
