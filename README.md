@@ -139,6 +139,8 @@ type: custom:mb-logbook-card
 period: month     # week, month, quarter or year
 # car: EQS        # optional: lock the card to one car (by name)
 ```
+
+If your dashboards are in YAML mode, the resource can't be added for you, so the card is loaded another way that some browsers (Firefox) can cache without it. If the card doesn't show, add `/mb_logbook/mb-logbook-card.js` as a JavaScript module under `resources:` in your Lovelace YAML.
 </details>
 
 <details>

@@ -39,14 +39,15 @@ async def test_an_old_card_resource_is_updated_in_place(ha, car):
     assert again["id"] == item["id"] and again["url"] == CARD
 
 
-async def test_yaml_dashboards_fall_back_to_extra_js(ha, car, monkeypatch):
-    """Open item L6: YAML-mode dashboards can't take a resource, so the card goes on the
-    frontend's extra-JS list (which some browsers cache; Firefox users may need to add
-    the resource by hand)."""
+async def test_yaml_dashboards_fall_back_to_extra_js(ha, car, monkeypatch, caplog):
+    """YAML-mode dashboards can't take a resource, so the card goes on the frontend's
+    extra-JS list, and the log says how to add the resource by hand (Firefox can cache
+    the page without the card)."""
     monkeypatch.setattr(ha.data[LOVELACE_DATA], "resources", object())
-    with patch("custom_components.mb_logbook.add_extra_js_url") as extra:
+    with patch("custom_components.mb_logbook.add_extra_js_url") as extra, caplog.at_level(logging.INFO):
         await _async_register_card(ha)
     extra.assert_called_once_with(ha, CARD)
+    assert f"add {CARD_URL} as a module resource" in caplog.text
 
 
 async def test_a_resource_error_never_blocks_setup(ha, car, monkeypatch, caplog):
@@ -66,19 +67,31 @@ async def test_the_sidebar_page_is_registered(ha, car):
     assert panel.require_admin is False  # open item L5: everyone can read the logbook
 
 
-async def test_unloading_the_last_car_keeps_the_shared_parts(ha, car, advance):
-    """Pins current behaviour (open item L7): the DB, sidebar page and websocket commands
-    stay until Home Assistant restarts. Adding the car back must still work."""
+async def test_unloading_the_last_car_removes_the_sidebar_page(ha, car, advance):
     await drive(ha, advance)
-    db = ha.data[DOMAIN]["db"]
+    db = car.runtime_data.db
     assert await ha.config_entries.async_unload(car.entry_id)
+    await ha.async_block_till_done()
+    assert PANEL_PATH not in ha.data[DATA_PANELS]
+    # The DB stays open for a car added back, which brings the page back too.
+    assert ha.data[DOMAIN]["db"] is db and db._conn is not None
+    assert await ha.config_entries.async_setup(car.entry_id)
+    await ha.async_block_till_done()
+    assert PANEL_PATH in ha.data[DATA_PANELS]
+    assert car.runtime_data.db is db
+    assert len(await trips(ha, car)) == 1
+    [_] = card_resources(ha)
+
+
+async def test_unloading_one_of_two_cars_keeps_the_shared_parts(ha, car):
+    base_states(ha, "car2")
+    second = await add_car(ha, {**BASE_CONF, "car_name": "Second", "odometer_entity": "sensor.car2_odometer"},
+                           unique_id="VIN2", title="Second")
+    db = car.runtime_data.db
+    assert await ha.config_entries.async_unload(second.entry_id)
     await ha.async_block_till_done()
     assert ha.data[DOMAIN]["db"] is db and db._conn is not None
     assert PANEL_PATH in ha.data[DATA_PANELS]
-    assert await ha.config_entries.async_setup(car.entry_id)
-    await ha.async_block_till_done()
-    assert car.runtime_data.db is db
-    assert len(await trips(ha, car)) == 1
 
 
 async def test_a_failing_first_import_does_not_stop_logging(ha, advance, caplog):
