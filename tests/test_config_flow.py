@@ -13,10 +13,6 @@ from custom_components.mb_logbook.models import capacity_for_model
 from .conftest import BASE_CONF, add_car
 
 
-def _form(conf):
-    return dict(conf)
-
-
 async def test_manual_setup_creates_the_car(ha):
     flow = await ha.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     assert flow["type"] is FlowResultType.FORM and flow["step_id"] == "user"
@@ -24,7 +20,7 @@ async def test_manual_setup_creates_the_car(ha):
     assert flow["step_id"] == "entities"
     flow = await ha.config_entries.flow.async_configure(flow["flow_id"], {**BASE_CONF, "battery_capacity_kwh": 0})
     assert flow["errors"] == {"battery_capacity_kwh": "capacity_required"}
-    flow = await ha.config_entries.flow.async_configure(flow["flow_id"], _form(BASE_CONF))
+    flow = await ha.config_entries.flow.async_configure(flow["flow_id"], dict(BASE_CONF))
     assert flow["type"] is FlowResultType.CREATE_ENTRY
     assert flow["title"] == "Test car"
     entry = ha.config_entries.async_entries(DOMAIN)[0]
@@ -35,7 +31,7 @@ async def test_the_same_car_cannot_be_added_twice(ha):
     await add_car(ha, unique_id="sensor.car_odometer")
     flow = await ha.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     flow = await ha.config_entries.flow.async_configure(flow["flow_id"], {})
-    flow = await ha.config_entries.flow.async_configure(flow["flow_id"], _form(BASE_CONF))
+    flow = await ha.config_entries.flow.async_configure(flow["flow_id"], dict(BASE_CONF))
     assert flow["type"] is FlowResultType.ABORT and flow["reason"] == "already_configured"
 
 
@@ -84,3 +80,31 @@ def test_battery_sizes_from_model_names():
     # The electric CLA 200 shares its name with the petrol one; it's only a pre-fill the user checks.
     assert capacity_for_model("CLA 200") == 85.0
     assert capacity_for_model(None) is None
+
+
+async def test_summary_targets_list_notify_services(ha):
+    ha.services.async_register("notify", "mobile_app_phone", lambda call: None)
+    ha.services.async_register("notify", "send_message", lambda call: None)
+    entry = await add_car(ha)
+    flow = await ha.config_entries.options.async_init(entry.entry_id)
+    schema = {str(k): v for k, v in flow["data_schema"].schema.items()}
+    options = [o["value"] for o in schema["summary_notify"].config["options"]]
+    assert options == ["persistent_notification", "notify.mobile_app_phone"]
+
+
+async def test_other_integrations_entities_on_the_car_are_ignored(ha):
+    mb = MockConfigEntry(domain="mbapi2020")
+    mb.add_to_hass(ha)
+    device = dr.async_get(ha).async_get_or_create(config_entry_id=mb.entry_id, identifiers={("mbapi2020", "W1K9")}, name="CLA")
+    other = MockConfigEntry(domain="template")
+    other.add_to_hass(ha)
+    reg = er.async_get(ha)
+    reg.async_get_or_create("sensor", "template", "W1K9_odometer", device_id=device.id, config_entry=other,
+                            suggested_object_id="fake_odometer")
+    reg.async_get_or_create("sensor", "mbapi2020", "W1K9_soc", device_id=device.id, config_entry=mb,
+                            suggested_object_id="cla_soc")
+    flow = await ha.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    flow = await ha.config_entries.flow.async_configure(flow["flow_id"], {"device_id": device.id})
+    schema = {str(k): k for k in flow["data_schema"].schema}
+    assert schema["soc_entity"].description["suggested_value"] == "sensor.cla_soc"
+    assert (schema["odometer_entity"].description or {}).get("suggested_value") is None

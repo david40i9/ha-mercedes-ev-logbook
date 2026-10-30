@@ -251,23 +251,21 @@ class _Replay:
             self.end_trip()
         old = self.cur.get(eid)
         self.cur[eid] = st
-        if c.get(CONF_IGNITION) and (
-            (eid == c[CONF_TRACKER] and _moved_m(old, st) >= MOVE_TRIGGER_M)
-            or (eid == c.get(CONF_TRIP_DISTANCE) and (_num(st) or 0) > (_num(old) or 0))
-        ):
-            ign = self.cur.get(c[CONF_IGNITION])
-            if self.trip is None and ign is not None and ign.state not in IGNITION_OFF and ign.state not in UNKNOWN_STATES:
-                self.start_trip(ts)
-            if self.trip is not None:
-                self.trip["moved_ts"] = ts
-        if not c.get(CONF_IGNITION):
+        # The car moved: the tracker jumped, or its trip counter went up.
+        moved = (eid == c[CONF_TRACKER] and _moved_m(old, st) >= MOVE_TRIGGER_M) or (
+            eid == c.get(CONF_TRIP_DISTANCE) and (_num(st) or 0) > (_num(old) or 0)
+        )
+        if c.get(CONF_IGNITION):
+            if moved:
+                ign = self.cur.get(c[CONF_IGNITION])
+                if self.trip is None and ign is not None and ign.state not in IGNITION_OFF and ign.state not in UNKNOWN_STATES:
+                    self.start_trip(ts)
+                if self.trip is not None:
+                    self.trip["moved_ts"] = ts
+        else:
             # No ignition sensor: the same movement rules as the live logger.
-            moved, odo_before = False, None
-            if eid == c[CONF_TRACKER] and _moved_m(old, st) >= MOVE_TRIGGER_M:
-                moved = True
-            elif eid == c.get(CONF_TRIP_DISTANCE) and (_num(st) or 0) > (_num(old) or 0):
-                moved = True
-            elif eid == c[CONF_ODOMETER]:
+            odo_before = None
+            if not moved and eid == c[CONF_ODOMETER]:
                 b, a = _num(old), _num(st)
                 if b is not None and a is not None and a > b:
                     moved, odo_before = True, _to_km(b, old)

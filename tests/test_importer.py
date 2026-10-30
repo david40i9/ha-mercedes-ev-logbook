@@ -114,8 +114,6 @@ async def test_reimport_never_touches_live_rows(ha, car, advance):
 
 
 async def test_import_service_returns_counts_per_car(ha, car, advance):
-    from homeassistant.core import SupportsResponse  # noqa: F401  (service is registered with response)
-
     await drive(ha, advance)
     await async_wait_recording_done(ha)
     res = await ha.services.async_call("mb_logbook", "import_history", {"days": 1}, blocking=True, return_response=True)
@@ -130,8 +128,6 @@ async def test_first_setup_imports_history_once(ha, advance):
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.mb_logbook.const import DOMAIN
-
-    from .conftest import BASE_CONF
 
     await drive(ha, advance, km=12)  # before the car is added
     await async_wait_recording_done(ha)
@@ -174,3 +170,110 @@ async def test_import_matches_live_for_a_paused_charge(ha, car, advance):
     live = await charges(ha, car)
     _, _, rep = await replay(ha, car, start)
     assert pick(rep, COMPARE_CHARGE) == pick(live, COMPARE_CHARGE)
+
+
+async def test_import_matches_live_in_movement_mode(ha, advance):
+    conf = {k: v for k, v in BASE_CONF.items() if k != "ignition_entity"}
+    entry = await add_car(ha, conf)
+    start = dt_util.utcnow()
+    await advance(minutes=1)
+    set_car(ha, odometer=1003)
+    await advance(minutes=2)
+    set_car(ha, odometer=1008, pos=AWAY, soc=77)
+    await advance(minutes=4)
+    await advance(hours=5)
+    set_car(ha, odometer=1012)
+    await advance(minutes=1)
+    set_car(ha, pos=HOME)
+    await advance(minutes=1)
+    set_car(ha, odometer=1016, soc=74)
+    await advance(minutes=4)
+    live = await trips(ha, entry)
+    assert len(live) == 2
+    _, rep_t, _ = await replay(ha, entry, start)
+    assert pick(rep_t, COMPARE_TRIP) == pick(live, COMPARE_TRIP)
+    assert sorted(t["odo_start_km"] for t in rep_t) == [1000, 1008]
+
+
+async def test_import_matches_live_with_a_trip_counter_reset(ha, advance):
+    set_car(ha, distance=0)
+    entry = await add_car(ha, {**BASE_CONF, "trip_distance_entity": "sensor.car_distance"})
+    start = dt_util.utcnow()
+    await advance(minutes=1)
+    set_car(ha, ignition="4")
+    await advance(minutes=5)
+    set_car(ha, distance=3.0)
+    await advance(minutes=5)
+    set_car(ha, distance=0)
+    await advance(minutes=1)
+    set_car(ha, distance=5.5, pos=AWAY, odometer=1008)
+    set_car(ha, ignition="0")
+    await advance(minutes=4)
+    [live] = await trips(ha, entry)
+    assert live["distance_km"] == 8.5
+    _, rep_t, _ = await replay(ha, entry, start)
+    assert pick(rep_t, COMPARE_TRIP) == pick([live], COMPARE_TRIP)
+
+
+async def test_import_matches_live_for_a_price_change_mid_charge(ha, advance):
+    ha.states.async_set("sensor.price", "10", {"unit_of_measurement": "p/kWh"})
+    entry = await add_car(ha, {**BASE_CONF, "price_entity": "sensor.price"})
+    start = dt_util.utcnow()
+    await advance(minutes=1)
+    set_car(ha, charging="on", power=7)
+    await advance(hours=1)
+    ha.states.async_set("sensor.price", "30", {"unit_of_measurement": "p/kWh"})
+    await advance(hours=1)
+    set_car(ha, charging="off", power=0, soc=94)
+    await advance(minutes=11)
+    [live] = await charges(ha, entry)
+    _, _, rep = await replay(ha, entry, start)
+    assert pick(rep, COMPARE_CHARGE) == pick([live], COMPARE_CHARGE)
+    assert rep[0]["cost"] == pytest.approx(2.8, abs=0.01)
+
+
+async def test_a_charge_still_running_at_the_cutoff_is_left_to_the_live_logger(ha, car, advance):
+    start = dt_util.utcnow()
+    set_car(ha, charging="on", power=7)
+    await advance(hours=1)
+    counts, _, rep = await replay(ha, car, start)
+    assert counts["charges"] == 0 and rep == []
+
+
+async def test_import_drops_a_short_ignition_blip(ha, car, advance):
+    start = dt_util.utcnow()
+    set_car(ha, ignition="4")
+    await advance(minutes=5)
+    set_car(ha, odometer=1000.1, ignition="0")
+    await advance(minutes=4)
+    counts, _, _ = await replay(ha, car, start)
+    assert counts["trips"] == 0
+
+
+@pytest.mark.xfail(strict=True, reason="Open item L4: the import credits each car the whole shared meter step")
+async def test_import_splits_a_shared_meter_like_the_live_logger(ha, advance):
+    from .conftest import base_states
+
+    ha.states.async_set("sensor.meter", "100", {"unit_of_measurement": "kWh"})
+    base_states(ha, "car2")
+    a = await add_car(ha, {**BASE_CONF, "charger_energy_entity": "sensor.meter"})
+    await add_car(
+        ha,
+        {**{k: v.replace("car", "car2") if isinstance(v, str) and "car" in v and "_entity" in k else v for k, v in BASE_CONF.items()},
+         "car_name": "Second", "charger_energy_entity": "sensor.meter"},
+        unique_id="VIN2", title="Second",
+    )
+    start = dt_util.utcnow()
+    await advance(minutes=1)
+    set_car(ha, charging="on", power=7.5)
+    set_car(ha, "car2", charging="on", power=2.5)
+    await advance(minutes=30)
+    ha.states.async_set("sensor.meter", "110", {"unit_of_measurement": "kWh"})
+    await advance(minutes=1)
+    set_car(ha, charging="off", power=0, soc=90)
+    set_car(ha, "car2", charging="off", power=0, soc=85)
+    await advance(minutes=11)
+    [live] = await charges(ha, a)
+    assert live["kwh_meter"] == 7.5
+    _, _, rep = await replay(ha, a, start)
+    assert rep[0]["kwh_meter"] == 7.5  # today: 10.0

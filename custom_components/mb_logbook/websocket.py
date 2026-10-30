@@ -770,7 +770,7 @@ async def ws_split_trip(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
         # The stop is a park like any other: a rise in battery % means it charged.
         **rules.park_fields(rules.new_park(t1, soc1, False), t2, soc2),
     }
-    await hass.async_add_executor_job(db.replace_trip, msg["trip_id"], [leg1, leg2])
+    await hass.async_add_executor_job(db.replace_trips, [msg["trip_id"]], [leg1, leg2])
     _refresh_all(hass)
     connection.send_result(msg["id"], {"split_at": t1, "resumed": t2})
 

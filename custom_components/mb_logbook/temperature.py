@@ -6,9 +6,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant, State
 
-from .const import CONF_OUTSIDE_TEMP
-
-UNKNOWN = ("unknown", "unavailable", "")
+from .const import CONF_OUTSIDE_TEMP, UNKNOWN_STATES
 
 
 def temp_source(hass: HomeAssistant, conf: dict[str, Any]) -> str | None:
@@ -29,7 +27,7 @@ def temp_c(state: State | None, unit: str | None = None) -> float | None:
     if state.entity_id.startswith("weather."):
         value, unit = state.attributes.get("temperature"), state.attributes.get("temperature_unit")
     else:
-        if state.state in UNKNOWN:
+        if state.state in UNKNOWN_STATES:
             return None
         value, unit = state.state, state.attributes.get("unit_of_measurement") or unit
     return to_c(value, unit)

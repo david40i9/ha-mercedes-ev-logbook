@@ -184,3 +184,43 @@ def test_idle_parks_respects_an_end_time(db):
     db.add_trip(trip(start_ts=100.0, park_hours=10, park_drain_hours=10, park_soc_drop=1, park_charged=False))
     db.add_trip(trip(start_ts=9000.0, park_hours=10, park_drain_hours=10, park_soc_drop=3, park_charged=False))
     assert db.idle_parks("c1", 0, 6, 5000) == [(10, 1)]
+
+
+def test_trip_lists_count_points_without_returning_them(db):
+    db.add_trip(trip(start_ts=100.0))
+    db.add_trip(trip(start_ts=200.0, points=None))
+    db._exec("UPDATE trips SET points = NULL WHERE start_ts = 200.0")  # rows from before routes were kept
+    rows = {t["start_ts"]: t for t in db.trips("c1", 0, 1e12)}
+    assert (rows[100.0]["point_count"], rows[200.0]["point_count"]) == (2, 0)
+    assert "points" not in rows[100.0]
+    assert rows[100.0]["park_charged"] is False and rows[100.0]["id"]
+
+
+def test_merge_and_split_rows_round_trip(db):
+    a = db.add_trip(trip(start_ts=100.0, park_charged=True))
+    b = db.add_trip(trip(start_ts=300.0))
+    db.replace_trips([a, b], [trip(start_ts=100.0, distance_km=20.0, park_charged=True)])
+    [t] = db.trips("c1", 0, 1e12)
+    assert (t["distance_km"], t["park_charged"]) == (20.0, True)
+    assert db.raw_trip(t["id"])["points"] == trip()["points"]
+    assert db.next_trip("c1", 100.0) is None
+
+
+def test_charge_locations_and_place_usage(db):
+    pid = db.save_place({"name": "Shop", "lat": 52.1, "lon": -1.1, "radius_m": 100})
+    db.add_charge({"car": "c1", "start_ts": 1000.0, "end_ts": 2000.0, "kwh_car": 5.0, "lat": 52.1, "lon": -1.1})
+    db.add_charge({"car": "c1", "start_ts": 3000.0, "end_ts": 4000.0, "kwh_meter": 5.0, "place": "Home"})
+    db.add_trip(trip(end_lat=52.1, end_lon=-1.1))
+    locs = {loc["location"]: loc for loc in db.charge_locations()}
+    assert (locs["Shop"]["charges"], locs["Shop"]["metered"]) == (1, 0)
+    assert (locs["Home"]["metered"], locs["Home"]["last_ts"]) == (1, 3000.0)
+    assert db.place_usage() == {pid: 2}  # one trip end and one charge
+    assert db.first_ts("c1") == 1000.0 and db.first_ts("nobody") is None
+
+
+def test_saving_a_rate_with_an_id_updates_it(db):
+    rid = db.save_rate({"location": "Home", "valid_from": 0, "rate": 0.2})
+    db.save_rate({"id": rid, "location": "Home", "valid_from": 0, "rate": 0.25})
+    assert [r["rate"] for r in db.rates()] == [0.25]
+    db.delete_rate(rid)
+    assert db.rates() == []
