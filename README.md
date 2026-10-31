@@ -119,7 +119,7 @@ Any car that provides these entities works, not only Mercedes. Pick them yoursel
 
 **Trips.** Click a trip to see its route. Choose a label from the dropdown, or give a place a default label (Places tab) and trips there are labelled automatically. Filter with the dropdowns under the column headers (place, label, distance, charged or not) or the label buttons; the totals follow, and **Export CSV** saves the trips shown. The Charging tab filters the same way, by place (or home / away) and how each charge was costed.
 
-**Places.** A stop outside your Home Assistant zones shows as *unnamed · name it*. Name it and drag the circle to fit; every past and future trip or charge there takes the name. Press **Suggest names** for nearby shops and venues from OpenStreetMap.
+**Places.** A stop outside your Home Assistant zones shows as *unnamed · name it*. Name it and drag the circle to fit; every past and future trip or charge there takes the name. Home Assistant zones work the same way: rename, move or resize a zone and past trips and charges follow it within a few seconds, along with its charging rates and default trip label. Press **Suggest names** for nearby shops and venues from OpenStreetMap.
 
 **Charging rates.** Give any charging place, Home included, a price per kWh (or mark it free) from a date, with an optional off-peak price and time window for EV tariffs (for example 7p from 00:30 to 05:30). Each charge is costed at the rate in force when it started, split by how much of it fell in the off-peak window, so a new rate never changes older charges. No price sensor or energy integration is needed. Costs are shown in the currency chosen in the car's options.
 

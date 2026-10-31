@@ -30,6 +30,7 @@ from .importer import async_import_history
 from .summary import async_send as async_send_summary, async_setup_summary
 from .logger import CarLogger
 from .websocket import async_register_websocket
+from .zones import async_track_zones
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -50,6 +51,8 @@ async def _async_setup_shared(hass: HomeAssistant) -> LogbookDB:
         await hass.async_add_executor_job(db.open)
         data["db"] = db
         async_register_websocket(hass)
+        # Lives as long as the DB: logged zone names follow zone changes.
+        data["zones_unsub"] = async_track_zones(hass, db)
         folder = Path(__file__).parent / "frontend"
         await hass.http.async_register_static_paths(
             [StaticPathConfig(STATIC_URL, str(folder), True)]
