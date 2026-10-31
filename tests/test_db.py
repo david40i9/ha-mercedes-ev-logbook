@@ -243,3 +243,34 @@ def test_unnamed_stops_group_unnamed_trip_ends(db):
     # Naming the spot clears it.
     db.save_place({"name": "Gym", "lat": 52.2, "lon": -1.2, "radius_m": 100})
     assert [g["lat"] for g in db.unnamed_stops()] == [51.0]
+
+
+def test_rename_location_moves_stops_rates_and_labels(db):
+    db.add_trip(trip(start_place="Work", end_place="Home"))  # no positions: renamed by text
+    db.add_charge({"car": "c1", "start_ts": 1, "end_ts": 2, "place": "Work"})
+    db.save_rate({"location": "Work", "valid_from": 0, "rate": 0})
+    db.set_place_label("Work", "Commute")
+    db.set_place_label("Office", "Business")  # a default already under the new name wins
+    db.rename_location("Work", "Office")
+    [t] = db.trips("c1", 0, 1e12)
+    assert (t["start_place"], t["end_place"]) == ("Office", "Home")
+    assert [c["place"] for c in db.charges("c1", 0, 1e12)] == ["Office"]
+    assert [r["location"] for r in db.rates()] == ["Office"]
+    assert db.place_labels() == {"Office": "Business"}
+    db.rename_location("Office", "Office")  # no-op
+
+
+def test_located_stops_and_set_stop_places(db):
+    tid = db.add_trip(trip(start_lat=52.0, start_lon=-1.0, start_place="Home", end_lat=None, end_lon=None))
+    cid = db.add_charge({"car": "c1", "start_ts": 1, "end_ts": 2, "place": None, "lat": 52.1, "lon": -1.1})
+    assert sorted(db.located_stops()) == [
+        ("charges", cid, "place", 52.1, -1.1, None),
+        ("trips", tid, "start_place", 52.0, -1.0, "Home"),
+    ]
+    db.set_stop_places([("trips", tid, "start_place", None), ("charges", cid, "place", "Shell")])
+    assert db.trips("c1", 0, 1e12)[0]["start_place"] is None
+    assert db.charges("c1", 0, 1e12)[0]["place"] == "Shell"
+    import pytest
+
+    with pytest.raises(ValueError):
+        db.set_stop_places([("trips", tid, "car", "x")])

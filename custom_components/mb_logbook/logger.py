@@ -539,7 +539,10 @@ class CarLogger:
             "start_lon": trip.get("start_lon"),
             "end_lat": lat,
             "end_lon": lon,
-            "start_place": trip.get("start_place"),
+            # Looked up again in case a zone changed during the trip.
+            "start_place": self._place(trip["start_lat"], trip["start_lon"])[0]
+            if trip.get("start_lat") is not None
+            else trip.get("start_place"),
             "end_place": place,
             "park_hours": trip.get("park_hours"),
             "park_drain_hours": trip.get("park_drain_hours"),
@@ -656,7 +659,9 @@ class CarLogger:
             "cost": cost,
             "cost_basis": basis,
             "max_power_kw": charge.get("max_power_kw") or None,
-            "place": charge.get("place"),
+            "place": self._place(charge["lat"], charge["lon"])[0]
+            if charge.get("lat") is not None and charge.get("lon") is not None
+            else charge.get("place"),
             "at_home": charge.get("at_home"),
             "lat": charge.get("lat"),
             "lon": charge.get("lon"),

@@ -315,6 +315,49 @@ class LogbookDB:
         cols = ("name", "lat", "lon", "radius_m")
         return self._insert("places", cols, tuple(place.get(c) for c in cols))
 
+    # ----- HA zones ------------------------------------------------------------------------
+    # Trips and charges keep the HA zone they were in as text. These keep that
+    # text in step when zones change (see zones.py).
+
+    def located_stops(self) -> list[tuple[str, int, str, float, float, str | None]]:
+        """(table, id, column, lat, lon, stored place) for every stop with a position."""
+        out: list[tuple[str, int, str, float, float, str | None]] = []
+        for end in ("start", "end"):
+            for r in self._exec(
+                f"SELECT id, {end}_lat AS lat, {end}_lon AS lon, {end}_place AS place FROM trips "
+                f"WHERE {end}_lat IS NOT NULL AND {end}_lon IS NOT NULL"
+            ):
+                out.append(("trips", r["id"], f"{end}_place", r["lat"], r["lon"], r["place"]))
+        for r in self._exec("SELECT id, lat, lon, place FROM charges WHERE lat IS NOT NULL AND lon IS NOT NULL"):
+            out.append(("charges", r["id"], "place", r["lat"], r["lon"], r["place"]))
+        return out
+
+    def set_stop_places(self, changes: list[tuple[str, int, str, str | None]]) -> None:
+        allowed = {("trips", "start_place"), ("trips", "end_place"), ("charges", "place")}
+        with self._lock:
+            assert self._conn is not None
+            for table, row_id, col, name in changes:
+                if (table, col) not in allowed:
+                    raise ValueError(f"not a place column: {table}.{col}")
+                self._conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (name, row_id))
+            self._conn.commit()
+
+    def rename_location(self, old: str, new: str) -> None:
+        """A zone was renamed: its stops (even those with no position), rates and
+        default label follow. A named place by the new name keeps its own default."""
+        if not old or not new or old == new:
+            return
+        with self._lock:
+            assert self._conn is not None
+            c = self._conn
+            c.execute("UPDATE trips SET start_place = ? WHERE start_place = ?", (new, old))
+            c.execute("UPDATE trips SET end_place = ? WHERE end_place = ?", (new, old))
+            c.execute("UPDATE charges SET place = ? WHERE place = ?", (new, old))
+            c.execute("UPDATE charge_rates SET location = ? WHERE location = ?", (new, old))
+            c.execute("UPDATE OR IGNORE place_labels SET location = ? WHERE location = ?", (new, old))
+            c.execute("DELETE FROM place_labels WHERE location = ?", (old,))
+            c.commit()
+
     # ----- charging rates ----------------------------------------------------------------
     # A location (an HA zone name or a named place) can have a history of rates:
     # each entry applies from ``valid_from`` until the next one. A charge with no
