@@ -115,7 +115,7 @@ def charge_cost(charge: dict[str, Any], has_price: bool) -> tuple[float | None, 
         if "priced_kwh" in charge and not charge["priced_kwh"]:
             return None, None  # no price reading all session: cost it at the place's rate
         return round(charge.get("cost") or 0.0, 4), "meter"
-    if has_price and charge.get("at_home") and (charge.get("kwh_power") or 0) > 0:
+    if charge.get("at_home") and (charge.get("kwh_power") or 0) > 0:
         return round(charge.get("cost_power") or 0.0, 4), "power"
     return None, None
 

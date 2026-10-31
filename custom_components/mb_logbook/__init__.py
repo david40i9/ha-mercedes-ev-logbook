@@ -11,11 +11,11 @@ import logging
 from pathlib import Path
 
 from homeassistant.components import panel_custom
-from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.frontend import add_extra_js_url, async_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.components.lovelace.resources import ResourceStorageCollection
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv
@@ -45,19 +45,21 @@ type LogbookConfigEntry = ConfigEntry[CarLogger]
 
 async def _async_setup_shared(hass: HomeAssistant) -> LogbookDB:
     data = hass.data.setdefault(DOMAIN, {})
-    if "db" in data:
-        return data["db"]
-    db = LogbookDB(hass.config.path(DB_FILENAME))
-    await hass.async_add_executor_job(db.open)
-    data["db"] = db
-    async_register_websocket(hass)
-    folder = Path(__file__).parent / "frontend"
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(STATIC_URL, str(folder), True)]
-    )
-    await _async_register_card(hass)
-    await _async_register_panel(hass)
-    return db
+    if "db" not in data:
+        db = LogbookDB(hass.config.path(DB_FILENAME))
+        await hass.async_add_executor_job(db.open)
+        data["db"] = db
+        async_register_websocket(hass)
+        folder = Path(__file__).parent / "frontend"
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(STATIC_URL, str(folder), True)]
+        )
+        await _async_register_card(hass)
+    if not data.get("panel"):
+        # Again after the last car was removed and one is added back.
+        await _async_register_panel(hass)
+        data["panel"] = True
+    return data["db"]
 
 
 async def _async_register_panel(hass: HomeAssistant) -> None:
@@ -86,7 +88,14 @@ async def _async_register_card(hass: HomeAssistant) -> None:
     try:
         resources = hass.data[LOVELACE_DATA].resources
         if not isinstance(resources, ResourceStorageCollection):
-            add_extra_js_url(hass, url)  # YAML-mode dashboards: can't edit resources
+            # YAML-mode dashboards: resources can't be edited from here.
+            _LOGGER.info(
+                "Dashboards are in YAML mode, so the card is loaded as extra JS. If it doesn't "
+                "show in a browser (Firefox can cache the page without it), add %s as a "
+                "module resource",
+                CARD_URL,
+            )
+            add_extra_js_url(hass, url)
             return
         await resources.async_get_info()  # loads the collection on first use
         for item in resources.async_items():
@@ -178,4 +187,14 @@ async def async_unload_entry(hass: HomeAssistant, entry: LogbookConfigEntry) -> 
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
         await entry.runtime_data.async_stop()
+        others = [
+            e for e in hass.config_entries.async_entries(DOMAIN)
+            if e.entry_id != entry.entry_id and e.state is ConfigEntryState.LOADED
+        ]
+        if not others:
+            # The last car: take the sidebar page down. The DB stays open (one idle
+            # file handle) because a sensor refresh can still be in flight here, and
+            # adding a car again reuses it.
+            async_remove_panel(hass, PANEL_PATH, warn_if_unknown=False)
+            hass.data[DOMAIN]["panel"] = False
     return ok

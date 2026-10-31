@@ -86,3 +86,74 @@ async def test_miles_car_reports_miles_and_mi_per_kwh(ha):
     assert st.attributes["unit_of_measurement"] == "mi" and float(st.state) == 20.0
     assert ha.states.get("sensor.test_car_logbook_last_trip_efficiency").state == "2.0"
     assert len(await trips(ha, entry)) == 1
+
+
+@pytest.fixture
+async def notes(ha):
+    from homeassistant.setup import async_setup_component
+
+    await async_setup_component(ha, "persistent_notification", {})
+    from homeassistant.components import persistent_notification
+
+    return lambda: persistent_notification._async_get_or_create_notifications(ha)
+
+
+async def _scheduled(ha, conf):
+    """Add a car and return its summary tick and the schedule it was given."""
+    from unittest.mock import patch
+
+    with patch("custom_components.mb_logbook.summary.async_track_time_change") as track:
+        await add_car(ha, conf)
+    if not track.called:
+        return None, None
+    (_, tick), when = track.call_args
+    return tick, when
+
+
+async def test_monthly_summary_is_sent_on_the_1st_at_nine(ha, notes):
+    tick, when = await _scheduled(ha, {**BASE_CONF, "summary_notify": "persistent_notification"})
+    assert when == {"hour": 9, "minute": 0, "second": 0}
+    tz = dt_util.get_default_time_zone()
+    await tick(datetime(2026, 12, 2, 9, tzinfo=tz))
+    assert notes() == {}  # not the 1st
+    await tick(datetime(2026, 12, 1, 9, tzinfo=tz))
+    assert notes()["mb_logbook_VIN1_month"]["title"] == "Test car: November 2026"
+
+
+async def test_no_summary_is_scheduled_without_a_target(ha):
+    tick, _ = await _scheduled(ha, {**BASE_CONF, "car_name": "Quiet"})
+    assert tick is None
+
+
+async def test_a_failing_notify_target_is_logged_not_raised(ha, caplog):
+    tick, _ = await _scheduled(ha, {**BASE_CONF, "summary_notify": "notify.gone"})
+    await tick(datetime(2026, 12, 1, 9, tzinfo=dt_util.get_default_time_zone()))
+    assert "Monthly summary for Test car failed" in caplog.text
+
+
+async def test_summary_in_miles_with_charging_cost(ha):
+    entry = await add_car(ha, {**BASE_CONF, "distance_unit": "mi", "currency": "EUR"})
+    lg = entry.runtime_data
+    sept = dt_util.as_utc(datetime(2026, 9, 10, 12, tzinfo=dt_util.get_default_time_zone())).timestamp()
+    await ha.async_add_executor_job(lg.db.add_trip, trip_row(lg.car_id, sept, distance_km=32.18688))
+    await ha.async_add_executor_job(lg.db.add_charge, {
+        "car": lg.car_id, "start_ts": sept + 7200, "end_ts": sept + 10800, "kwh_meter": 20.0,
+        "cost": 1234.5, "cost_basis": "meter", "at_home": True,
+    })
+    _, message = await summary.async_build(ha, lg, datetime(2026, 10, 1, 9, tzinfo=dt_util.get_default_time_zone()))
+    assert message.splitlines() == [
+        "1 trips, 20 mi",
+        "Used about 10 kWh driving (2.00 mi/kWh)",
+        "Charged 20 kWh in 1 sessions, €1,234.50",
+    ]
+
+
+def test_money_formats():
+    assert summary._money("JPY", 1234.5) == "¥1,234"
+    assert summary._money("SEK", 99.5) == "99.50 SEK"
+    assert summary._money("CHF", 3) == "CHF 3.00"
+
+
+def test_last_month_wraps_the_year():
+    start, end = summary._last_month(datetime(2026, 1, 1, 9))
+    assert (start, end) == (datetime(2025, 12, 1), datetime(2026, 1, 1))

@@ -116,6 +116,27 @@ CHARGE_COLS = (
     "car", "start_ts", "end_ts", "soc_start", "soc_end", "kwh_car", "kwh_meter", "kwh_power",
     "cost", "max_power_kw", "place", "at_home", "lat", "lon", "cost_basis",
 )
+# Trip lists only need how many route points a trip has, not the points themselves.
+_TRIP_LIST_COLS = ", ".join(
+    ["id", *(c for c in TRIP_COLS if c != "points"), "COALESCE(json_array_length(points), 0) AS point_count"]
+)
+
+
+def _trip_row(trip: dict[str, Any]) -> tuple:
+    row = dict(trip)
+    row["points"] = json.dumps(row.get("points") or [])
+    row["park_charged"] = 1 if row.get("park_charged") else 0
+    return tuple(row.get(c) for c in TRIP_COLS)
+
+
+def _charge_row(charge: dict[str, Any]) -> tuple:
+    row = dict(charge)
+    row["at_home"] = 1 if row.get("at_home") else 0
+    return tuple(row.get(c) for c in CHARGE_COLS)
+
+
+def _insert_sql(table: str, cols: tuple) -> str:
+    return f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})"
 
 
 def distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -246,11 +267,10 @@ class LogbookDB:
             self._conn.commit()
             return rows
 
-    def _insert(self, table: str, cols: tuple, row: dict[str, Any]) -> int:
-        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})"
+    def _insert(self, table: str, cols: tuple, values: tuple) -> int:
         with self._lock:
             assert self._conn is not None
-            cur = self._conn.execute(sql, tuple(row.get(c) for c in cols))
+            cur = self._conn.execute(_insert_sql(table, cols), values)
             self._conn.commit()
             return int(cur.lastrowid)
 
@@ -292,7 +312,8 @@ class LogbookDB:
                     (place["name"], old[0]["name"]),
                 )
             return int(place["id"])
-        return self._insert("places", ("name", "lat", "lon", "radius_m"), place)
+        cols = ("name", "lat", "lon", "radius_m")
+        return self._insert("places", cols, tuple(place.get(c) for c in cols))
 
     # ----- charging rates ----------------------------------------------------------------
     # A location (an HA zone name or a named place) can have a history of rates:
@@ -322,7 +343,7 @@ class LogbookDB:
                 (*(rate.get(c) for c in cols), rate["id"]),
             )
             return int(rate["id"])
-        return self._insert("charge_rates", cols, rate)
+        return self._insert("charge_rates", cols, tuple(rate.get(c) for c in cols))
 
     def delete_rate(self, rate_id: int) -> None:
         self._exec("DELETE FROM charge_rates WHERE id = ?", (rate_id,))
@@ -380,16 +401,13 @@ class LogbookDB:
     # ----- trips -------------------------------------------------------------------------
 
     def add_trip(self, trip: dict[str, Any]) -> int:
-        row = dict(trip)
-        row["points"] = json.dumps(row.get("points") or [])
-        row["park_charged"] = 1 if row.get("park_charged") else 0
-        return self._insert("trips", TRIP_COLS, row)
+        return self._insert("trips", TRIP_COLS, _trip_row(trip))
 
     def trips(
         self, car: str, start_ts: float, end_ts: float, limit: int = 2000
     ) -> list[dict[str, Any]]:
         rows = self._exec(
-            "SELECT * FROM trips WHERE car = ? AND start_ts >= ? AND start_ts < ? "
+            f"SELECT {_TRIP_LIST_COLS} FROM trips WHERE car = ? AND start_ts >= ? AND start_ts < ? "
             "ORDER BY start_ts DESC LIMIT ?",
             (car, start_ts, end_ts, limit),
         )
@@ -399,8 +417,6 @@ class LogbookDB:
         out = []
         for r in rows:
             d = dict(r)
-            pts = d.pop("points") or "[]"
-            d["point_count"] = len(json.loads(pts))
             d["park_charged"] = bool(d["park_charged"])
             d = self._name_trip(d, places)
             d["label"] = labels.get(round(d["start_ts"]))
@@ -505,26 +521,14 @@ class LogbookDB:
         )
         return self.raw_trip(rows[0]["id"]) if rows else None
 
-    def replace_trip(self, trip_id: int, legs: list[dict[str, Any]]) -> None:
-        """Swap one trip for several (a split), in one transaction."""
-        self.replace_trips([trip_id], legs)
-
     def replace_trips(self, trip_ids: list[int], legs: list[dict[str, Any]]) -> None:
         """Swap trips for new ones (split or merge), in one transaction."""
-        rows = []
-        for t in legs:
-            row = dict(t)
-            row["points"] = json.dumps(row.get("points") or [])
-            row["park_charged"] = 1 if row.get("park_charged") else 0
-            rows.append(tuple(row.get(c) for c in TRIP_COLS))
+        rows = [_trip_row(t) for t in legs]
         with self._lock:
             assert self._conn is not None
             with self._conn:
                 self._conn.executemany("DELETE FROM trips WHERE id = ?", [(i,) for i in trip_ids])
-                self._conn.executemany(
-                    f"INSERT INTO trips ({', '.join(TRIP_COLS)}) VALUES ({', '.join('?' for _ in TRIP_COLS)})",
-                    rows,
-                )
+                self._conn.executemany(_insert_sql("trips", TRIP_COLS), rows)
 
     def set_trip_temps(self, temps: list[tuple[int, float]]) -> None:
         """Fill in outside temperatures found later (from recorder history)."""
@@ -549,9 +553,7 @@ class LogbookDB:
     # ----- charges -----------------------------------------------------------------------
 
     def add_charge(self, charge: dict[str, Any]) -> int:
-        row = dict(charge)
-        row["at_home"] = 1 if row.get("at_home") else 0
-        return self._insert("charges", CHARGE_COLS, row)
+        return self._insert("charges", CHARGE_COLS, _charge_row(charge))
 
     def charges(
         self, car: str, start_ts: float, end_ts: float, limit: int = 2000
@@ -602,30 +604,15 @@ class LogbookDB:
         self, car: str, cutoff_ts: float, trips: list[dict[str, Any]], charges: list[dict[str, Any]]
     ) -> None:
         """Swap in imported history: drop this car's rows before the cut-off, insert new ones."""
-        trip_rows = []
-        for t in trips:
-            row = dict(t)
-            row["points"] = json.dumps(row.get("points") or [])
-            row["park_charged"] = 1 if row.get("park_charged") else 0
-            trip_rows.append(tuple(row.get(c) for c in TRIP_COLS))
-        charge_rows = []
-        for c in charges:
-            row = dict(c)
-            row["at_home"] = 1 if row.get("at_home") else 0
-            charge_rows.append(tuple(row.get(col) for col in CHARGE_COLS))
+        trip_rows = [_trip_row(t) for t in trips]
+        charge_rows = [_charge_row(c) for c in charges]
         with self._lock:
             assert self._conn is not None
             with self._conn:  # one transaction
                 self._conn.execute("DELETE FROM trips WHERE car = ? AND start_ts < ?", (car, cutoff_ts))
                 self._conn.execute("DELETE FROM charges WHERE car = ? AND start_ts < ?", (car, cutoff_ts))
-                self._conn.executemany(
-                    f"INSERT INTO trips ({', '.join(TRIP_COLS)}) VALUES ({', '.join('?' for _ in TRIP_COLS)})",
-                    trip_rows,
-                )
-                self._conn.executemany(
-                    f"INSERT INTO charges ({', '.join(CHARGE_COLS)}) VALUES ({', '.join('?' for _ in CHARGE_COLS)})",
-                    charge_rows,
-                )
+                self._conn.executemany(_insert_sql("trips", TRIP_COLS), trip_rows)
+                self._conn.executemany(_insert_sql("charges", CHARGE_COLS), charge_rows)
 
     def first_ts(self, car: str) -> float | None:
         rows = self._exec(
