@@ -114,15 +114,17 @@ class MBLogbookCard extends HTMLElement {
     }
     const { start, end } = this._range();
     const args = { entry_id: this._car.entry_id, start, end };
-    const [trips, charges, places, rates, labels, placeLabels] = await Promise.all([
+    const [trips, charges, places, rates, labels, placeLabels, unnamed] = await Promise.all([
       this._hass.callWS({ type: "mb_logbook/trips", ...args }),
       this._hass.callWS({ type: "mb_logbook/charges", ...args }),
       this._hass.callWS({ type: "mb_logbook/places" }),
       this._hass.callWS({ type: "mb_logbook/rates" }).catch(() => ({ locations: [], rates: [] })),
       this._hass.callWS({ type: "mb_logbook/labels" }).catch(() => ["Business", "Personal", "Commute"]),
       this._hass.callWS({ type: "mb_logbook/place_labels" }).catch(() => []),
+      this._hass.callWS({ type: "mb_logbook/unnamed_places" }).catch(() => []),
     ]);
     this._placeLabels = placeLabels;
+    this._unnamed = unnamed;
     this._rates = rates;
     this._labels = labels;
     this._trips = trips;
@@ -175,6 +177,27 @@ class MBLogbookCard extends HTMLElement {
         </tr>${this._openPlace === p.id ? `<tr class=maprow><td colspan=5><div class="dim">Drag the pin to move this place or the circle's edge to resize it, then press Save.</div><div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
+  }
+
+  /** Places tab: stops with no place name yet (last 12 months, all cars), most visited first. */
+  _unnamedSection() {
+    const list = (this._unnamed || []).slice(0, 20);
+    if (!list.length) return "";
+    const admin = this._hass.user?.is_admin;
+    const total = this._unnamed.length;
+    const rows = list
+      .map((u, i) => {
+        const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
+        const where = u.usually_from ? `Usually from ${esc(u.usually_from)}` : `${u.lat.toFixed(4)}, ${u.lon.toFixed(4)}`;
+        return `<tr><td>Unnamed place<div class=dim>${where}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+            <td class=n>${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button>` : ""}</td></tr>
+          ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
+      })
+      .join("");
+    return `<h3 class=sub>Needs a name <span class=badge>${total}</span></h3>
+      <div class=dim>Places the car stopped in the last 12 months that have no name yet, most visited first${total > list.length ? ` (top ${list.length} shown)` : ""}.</div>
+      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <h3 class=sub>Named places</h3>`;
   }
 
   /** Default label, trip count and home flag for a place name, from place_labels. */
@@ -870,8 +893,9 @@ class MBLogbookCard extends HTMLElement {
         ? "<div></div>"
         : `<div class=periodbar><div class=seg>${PERIODS.map(([v, l]) => `<button data-period="${v}" class="${v === this._period ? "on" : ""}">${l}</button>`).join("")}</div>
            <div class=stepper><button class=step data-step="1" title="Previous">‹</button><span class=range>${esc(this._range().label)}</span><button class=step data-step="-1" title="Next" ${this._offset === 0 ? "disabled" : ""}>›</button></div></div>`;
+    const unnamed = (this._unnamed || []).length;
     const tabs = `<div class=seg>${[["trips", "Trips"], ["charges", "Charging"], ["places", "Places"]]
-      .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}</button>`)
+      .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}${v === "places" && unnamed ? ` <span class=badge title="${unnamed} unnamed place${unnamed === 1 ? "" : "s"}">${unnamed > 99 ? "99+" : unnamed}</span>` : ""}</button>`)
       .join("")}</div>`;
     const clear = this._filtering ? `<button class=cfclear title="Show all rows again">Clear filters</button>` : "";
     const table =
@@ -880,7 +904,7 @@ class MBLogbookCard extends HTMLElement {
         : this._tab === "charges"
           ? `${this._charges.length ? `<div class=labelbar>${clear}<button class="csv csvc" title="Download the charging sessions shown">Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr>${this._charges.length ? this._chargeFilterRow() : ""}</thead><tbody>${this._chargeRows()}</tbody></table>
              ${this._rateSection()}`
-          : `<table><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
+          : `${this._unnamedSection()}<table><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
              <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.
              Trips with no label of their own take the default of where they end, or else where they start (so Home → Work and Work → Home both count). Labels you pick on a trip always win.</div>`;
     root.innerHTML = `<style>${MBLogbookCard.css}</style>
@@ -1108,6 +1132,7 @@ class MBLogbookCard extends HTMLElement {
         if (b.dataset.kind === "trip") this._open = id;
         this._render();
         if (b.dataset.kind === "trip") this._showMap(id);
+        else if (b.dataset.kind === "unnamed") this._showNamingMap(this._unnamed[id].lat, this._unnamed[id].lon);
         else {
           const c = this._charges.find((x) => x.id === id);
           this._showNamingMap(c.lat, c.lon);
@@ -1273,6 +1298,7 @@ MBLogbookCard.css = `
   tr.trip:hover, tr.trip.open { background: var(--secondary-background-color); }
   .dim { color: var(--secondary-text-color); font-size: .85em; }
   .empty { text-align: center; color: var(--secondary-text-color); padding: 18px; }
+  .badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 10px; background: var(--error-color, #db4437); color: #fff; font-size: .72em; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: middle; box-sizing: border-box; }
   .chip { font-size: .75em; padding: 1px 6px; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
   .chip.live { background: var(--success-color, #43a047); color: #fff; }
   button.nameit { background: none; border: 1px dashed var(--divider-color); border-radius: 8px; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; cursor: pointer; }

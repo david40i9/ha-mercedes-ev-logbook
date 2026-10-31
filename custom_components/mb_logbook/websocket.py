@@ -70,6 +70,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_trip_label)
     websocket_api.async_register_command(hass, ws_labels)
     websocket_api.async_register_command(hass, ws_place_labels)
+    websocket_api.async_register_command(hass, ws_unnamed_places)
     websocket_api.async_register_command(hass, ws_place_label_set)
     websocket_api.async_register_command(hass, ws_rates)
     websocket_api.async_register_command(hass, ws_rate_save)
@@ -259,6 +260,17 @@ async def ws_place_labels(hass: HomeAssistant, connection, msg: dict[str, Any]) 
         v["label"] = defaults.get(v["location"])
         v["is_home"] = v["location"] in homes
     connection.send_result(msg["id"], visited)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/unnamed_places", vol.Optional("days", default=365): vol.All(int, vol.Range(min=1))}
+)
+@websocket_api.async_response
+async def ws_unnamed_places(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Places trips stopped at with no name yet (all cars), most visited first."""
+    db = hass.data[DOMAIN]["db"]
+    since = dt_util.utcnow().timestamp() - msg["days"] * 86400
+    connection.send_result(msg["id"], await hass.async_add_executor_job(db.unnamed_stops, since))
 
 
 @websocket_api.require_admin

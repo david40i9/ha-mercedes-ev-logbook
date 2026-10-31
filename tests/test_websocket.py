@@ -66,6 +66,8 @@ async def test_labels_and_place_defaults(ha, car, ws, advance):
     await ws("place_label_set", location="Home", label="Commute")
     rows = {r["location"]: r for r in (await ws("place_labels"))["result"]}
     assert rows["Home"]["is_home"] and rows["Home"]["label"] == "Commute"
+    assert (await ws("unnamed_places"))["success"]
+    assert not (await ws("unnamed_places", days=0))["success"]
 
 
 async def test_rates_validate_and_cost_charges(ha, car, ws):
