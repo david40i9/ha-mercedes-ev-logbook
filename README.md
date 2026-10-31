@@ -64,7 +64,7 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/charging.png" alt="Charging tab">
 
-**Places:** named places and default trip labels. Open **Map** to drag a place's pin or resize its circle.
+**Places:** stops that still need a name (the Places tab shows how many), then named places and Home Assistant zones in one table, each with its default trip label. Open **Map** to drag a place's pin or resize its circle.
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/places.png" alt="Places tab">
 

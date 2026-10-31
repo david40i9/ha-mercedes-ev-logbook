@@ -114,15 +114,17 @@ class MBLogbookCard extends HTMLElement {
     }
     const { start, end } = this._range();
     const args = { entry_id: this._car.entry_id, start, end };
-    const [trips, charges, places, rates, labels, placeLabels] = await Promise.all([
+    const [trips, charges, places, rates, labels, placeLabels, unnamed] = await Promise.all([
       this._hass.callWS({ type: "mb_logbook/trips", ...args }),
       this._hass.callWS({ type: "mb_logbook/charges", ...args }),
       this._hass.callWS({ type: "mb_logbook/places" }),
       this._hass.callWS({ type: "mb_logbook/rates" }).catch(() => ({ locations: [], rates: [] })),
       this._hass.callWS({ type: "mb_logbook/labels" }).catch(() => ["Business", "Personal", "Commute"]),
       this._hass.callWS({ type: "mb_logbook/place_labels" }).catch(() => []),
+      this._hass.callWS({ type: "mb_logbook/unnamed_places" }).catch(() => []),
     ]);
     this._placeLabels = placeLabels;
+    this._unnamed = unnamed;
     this._rates = rates;
     this._labels = labels;
     this._trips = trips;
@@ -134,25 +136,74 @@ class MBLogbookCard extends HTMLElement {
     this._render();
   }
 
+  /** Places tab: named places and HA zones in one table, each with its default trip label. */
   _placeRows() {
-    if (!this._places.length)
-      return `<tr><td colspan=4 class=empty>No named places yet. Click “unnamed · name it” on a trip or charge to add one.</td></tr>`;
     const admin = this._hass.user?.is_admin;
     const radii = [50, 100, 200, 500, 1000];
-    return this._sorted(this._places, { name: (p) => p.name, radius: (p) => p.radius_m, uses: (p) => p.uses })
-      .map((p) => {
+    const info = new Map((this._placeLabels || []).map((r) => [r.location, r]));
+    const named = new Set(this._places.map((p) => p.name));
+    // HA zones (and places since deleted that still have a default) have no circle here,
+    // but trips go there, so they get a row for their default label.
+    const zones = (this._placeLabels || []).filter((r) => !named.has(r.location));
+    const rows = [
+      ...this._places.map((p) => ({ place: p, name: p.name, radius: p.radius_m, uses: p.uses, ...this._labelInfo(info, p.name) })),
+      ...zones.map((r) => ({ name: r.location, radius: null, uses: r.visits, ...this._labelInfo(info, r.location) })),
+    ];
+    if (!rows.length)
+      return `<tr><td colspan=5 class=empty>No named places yet. Click “unnamed · name it” on a trip or charge to add one.</td></tr>`;
+    const labels = [...new Set([...(this._labels || []), ...rows.map((r) => r.label).filter(Boolean)])];
+    const labelCell = (r) =>
+      admin
+        ? `<select class=plabel data-loc="${esc(r.name)}" title="Default label for trips to or from here"><option value="">–</option>${labels
+            .map((l) => `<option value="${esc(l)}" ${l === r.label ? "selected" : ""}>${esc(l)}</option>`)
+            .join("")}<option value="__other">Other…</option></select>`
+        : esc(r.label || "–");
+    return this._sorted(rows, { name: (r) => r.name, radius: (r) => r.radius, uses: (r) => r.uses, label: (r) => r.label })
+      .map((r) => {
+        const home = r.is_home ? " <span class=chip>home</span>" : "";
+        const p = r.place;
+        if (!p)
+          return `<tr><td>${esc(r.name)}${home}</td><td>${labelCell(r)}</td><td class=dim>HA zone</td><td class=n>${r.uses}</td><td></td></tr>`;
         const opts = [...new Set([...radii, Math.round(p.radius_m)])]
           .sort((a, b) => a - b)
-          .map((r) => `<option value="${r}" ${r === Math.round(p.radius_m) ? "selected" : ""}>${r < 1000 ? r + " m" : r / 1000 + " km"}</option>`)
+          .map((x) => `<option value="${x}" ${x === Math.round(p.radius_m) ? "selected" : ""}>${x < 1000 ? x + " m" : x / 1000 + " km"}</option>`)
           .join("");
         return `<tr data-place="${p.id}">
-          <td>${admin ? `<input class=pn value="${esc(p.name)}" maxlength=60>` : esc(p.name)}</td>
+          <td>${admin ? `<input class=pn value="${esc(p.name)}" maxlength=60>` : esc(p.name)}${home}</td>
+          <td>${labelCell(r)}</td>
           <td>${admin ? `<select class=pr>${opts}</select>` : Math.round(p.radius_m) + " m"}</td>
           <td class=n>${p.uses}</td>
           <td class=n><button class=pmap>${this._openPlace === p.id ? "Hide map" : "Map"}</button>${admin ? ` <button class=psv>Save</button> <button class=pdel>Delete</button>` : ""}</td>
-        </tr>${this._openPlace === p.id ? `<tr class=maprow><td colspan=4><div class="dim">Drag the pin to move this place or the circle's edge to resize it, then press Save.</div><div id=mapbox class=small></div></td></tr>` : ""}`;
+        </tr>${this._openPlace === p.id ? `<tr class=maprow><td colspan=5><div class="dim">Drag the pin to move this place or the circle's edge to resize it, then press Save.</div><div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
+  }
+
+  /** Places tab: stops with no place name yet (last 12 months, all cars), most visited first. */
+  _unnamedSection() {
+    const list = (this._unnamed || []).slice(0, 20);
+    if (!list.length) return "";
+    const admin = this._hass.user?.is_admin;
+    const total = this._unnamed.length;
+    const rows = list
+      .map((u, i) => {
+        const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
+        const where = u.usually_from ? `Usually from ${esc(u.usually_from)}` : `${u.lat.toFixed(4)}, ${u.lon.toFixed(4)}`;
+        return `<tr><td>Unnamed place<div class=dim>${where}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+            <td class=n>${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button>` : ""}</td></tr>
+          ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
+      })
+      .join("");
+    return `<h3 class=sub>Needs a name <span class=badge>${total}</span></h3>
+      <div class=dim>Places the car stopped in the last 12 months that have no name yet, most visited first${total > list.length ? ` (top ${list.length} shown)` : ""}.</div>
+      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <h3 class=sub>Named places</h3>`;
+  }
+
+  /** Default label, trip count and home flag for a place name, from place_labels. */
+  _labelInfo(info, name) {
+    const r = info.get(name);
+    return { label: r?.label || null, visits: r?.visits || 0, is_home: !!r?.is_home };
   }
 
   /** Nearby named places from OpenStreetMap, only when the user asks. */
@@ -201,27 +252,6 @@ class MBLogbookCard extends HTMLElement {
     if (e.rate === 0 && e.offpeak_rate == null) return "Free";
     const off = e.offpeak_rate != null && e.offpeak_start ? ` · off-peak ${this._money(e.offpeak_rate, true)} ${e.offpeak_start}–${e.offpeak_end}` : "";
     return `${this._money(e.rate, true)}/kWh${off}`;
-  }
-
-  /** Places tab: a default trip label for each place trips go to. */
-  _placeLabelSection() {
-    const rows = this._placeLabels || [];
-    if (!rows.length) return "";
-    const admin = this._hass.user?.is_admin;
-    const labels = [...new Set([...(this._labels || []), ...rows.map((r) => r.label).filter(Boolean)])];
-    const body = rows
-      .map((r, i) => {
-        const cell = admin
-          ? `<select class=plabel data-loc="${i}"><option value="">–</option>${labels
-              .map((l) => `<option value="${esc(l)}" ${l === r.label ? "selected" : ""}>${esc(l)}</option>`)
-              .join("")}<option value="__other">Other…</option></select>`
-          : esc(r.label || "–");
-        return `<tr><td>${esc(r.location)}${r.is_home ? " <span class=chip>home</span>" : ""}</td><td class=n>${r.visits}</td><td>${cell}</td></tr>`;
-      })
-      .join("");
-    return `<h3 class=sub>Default trip labels</h3>
-      <div class=dim>Trips with no label of their own take the default of where they end, or else where they start (so Home → Work and Work → Home both count). Labels you pick on a trip always win.</div>
-      <table><thead><tr><th>Place</th><th class=n>Trips</th><th>Default label</th></tr></thead><tbody>${body}</tbody></table>`;
   }
 
   /** Places tab: each charging location with its rate history. */
@@ -863,8 +893,9 @@ class MBLogbookCard extends HTMLElement {
         ? "<div></div>"
         : `<div class=periodbar><div class=seg>${PERIODS.map(([v, l]) => `<button data-period="${v}" class="${v === this._period ? "on" : ""}">${l}</button>`).join("")}</div>
            <div class=stepper><button class=step data-step="1" title="Previous">‹</button><span class=range>${esc(this._range().label)}</span><button class=step data-step="-1" title="Next" ${this._offset === 0 ? "disabled" : ""}>›</button></div></div>`;
+    const unnamed = (this._unnamed || []).length;
     const tabs = `<div class=seg>${[["trips", "Trips"], ["charges", "Charging"], ["places", "Places"]]
-      .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}</button>`)
+      .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}${v === "places" && unnamed ? ` <span class=badge title="${unnamed} unnamed place${unnamed === 1 ? "" : "s"}">${unnamed > 99 ? "99+" : unnamed}</span>` : ""}</button>`)
       .join("")}</div>`;
     const clear = this._filtering ? `<button class=cfclear title="Show all rows again">Clear filters</button>` : "";
     const table =
@@ -873,9 +904,9 @@ class MBLogbookCard extends HTMLElement {
         : this._tab === "charges"
           ? `${this._charges.length ? `<div class=labelbar>${clear}<button class="csv csvc" title="Download the charging sessions shown">Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr>${this._charges.length ? this._chargeFilterRow() : ""}</thead><tbody>${this._chargeRows()}</tbody></table>
              ${this._rateSection()}`
-          : `<table><thead><tr>${this._th("name", "Name")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
-             <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.</div>
-             ${this._placeLabelSection()}`;
+          : `${this._unnamedSection()}<table><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
+             <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.
+             Trips with no label of their own take the default of where they end, or else where they start (so Home → Work and Work → Home both count). Labels you pick on a trip always win.</div>`;
     root.innerHTML = `<style>${MBLogbookCard.css}</style>
       <ha-card>
         <div class=head><div class=title>${esc(this._config.title || this._car.name + " logbook")}${this._car.trip_active ? ' <span class="chip live">driving</span>' : ""}${this._car.charge_active ? ' <span class="chip live">charging</span>' : ""}</div>${cars}</div>
@@ -937,8 +968,8 @@ class MBLogbookCard extends HTMLElement {
     );
     root.querySelectorAll("select.plabel").forEach((s) =>
       s.addEventListener("change", async () => {
-        const row = this._placeLabels[Number(s.dataset.loc)];
-        const loc = row.location;
+        const loc = s.dataset.loc;
+        const row = this._labelInfo(new Map((this._placeLabels || []).map((r) => [r.location, r])), loc);
         let label = s.value;
         if (label === "__other") {
           label = (prompt(`Default label for trips to and from ${loc}:`) || "").trim().slice(0, 30);
@@ -1101,6 +1132,7 @@ class MBLogbookCard extends HTMLElement {
         if (b.dataset.kind === "trip") this._open = id;
         this._render();
         if (b.dataset.kind === "trip") this._showMap(id);
+        else if (b.dataset.kind === "unnamed") this._showNamingMap(this._unnamed[id].lat, this._unnamed[id].lon);
         else {
           const c = this._charges.find((x) => x.id === id);
           this._showNamingMap(c.lat, c.lon);
@@ -1266,6 +1298,7 @@ MBLogbookCard.css = `
   tr.trip:hover, tr.trip.open { background: var(--secondary-background-color); }
   .dim { color: var(--secondary-text-color); font-size: .85em; }
   .empty { text-align: center; color: var(--secondary-text-color); padding: 18px; }
+  .badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 10px; background: var(--error-color, #db4437); color: #fff; font-size: .72em; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: middle; box-sizing: border-box; }
   .chip { font-size: .75em; padding: 1px 6px; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
   .chip.live { background: var(--success-color, #43a047); color: #fff; }
   button.nameit { background: none; border: 1px dashed var(--divider-color); border-radius: 8px; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; cursor: pointer; }
@@ -1286,7 +1319,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.25.2";
+const CARD_VERSION = "0.26.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

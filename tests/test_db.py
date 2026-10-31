@@ -224,3 +224,22 @@ def test_saving_a_rate_with_an_id_updates_it(db):
     assert [r["rate"] for r in db.rates()] == [0.25]
     db.delete_rate(rid)
     assert db.rates() == []
+
+
+def test_unnamed_stops_group_unnamed_trip_ends(db):
+    # Two trips from Office to a spot ~50 m apart, one back, and one to a named shop.
+    db.save_place({"name": "Office", "lat": 52.0, "lon": -1.0, "radius_m": 100})
+    db.save_place({"name": "Shop", "lat": 52.3, "lon": -1.3, "radius_m": 100})
+    db.add_trip(trip(start_ts=1000, end_ts=2000, start_lat=52.0, start_lon=-1.0, end_lat=52.2, end_lon=-1.2))
+    db.add_trip(trip(start_ts=3000, end_ts=4000, start_lat=52.0, start_lon=-1.0, end_lat=52.2004, end_lon=-1.2))
+    db.add_trip(trip(start_ts=5000, end_ts=6000, start_lat=52.2, start_lon=-1.2, end_lat=52.0, end_lon=-1.0))
+    db.add_trip(trip(start_ts=7000, end_ts=8000, start_lat=52.0, start_lon=-1.0, end_lat=52.3, end_lon=-1.3))
+    db.add_trip(trip(start_ts=9000, end_ts=9500, start_lat=52.0, start_lon=-1.0, end_lat=51.0, end_lon=-2.0))
+    [a, b] = db.unnamed_stops()
+    assert (a["visits"], a["last_ts"], a["usually_from"]) == (3, 5000, "Office")
+    assert (b["lat"], b["lon"], b["visits"]) == (51.0, -2.0, 1)
+    # Only trips since the cut-off count.
+    assert [g["visits"] for g in db.unnamed_stops(since_ts=4500)] == [1, 1]
+    # Naming the spot clears it.
+    db.save_place({"name": "Gym", "lat": 52.2, "lon": -1.2, "radius_m": 100})
+    assert [g["lat"] for g in db.unnamed_stops()] == [51.0]

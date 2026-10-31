@@ -459,6 +459,36 @@ class LogbookDB:
                     counts[name] = counts.get(name, 0) + 1
         return [{"location": k, "visits": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]
 
+    def unnamed_stops(self, since_ts: float = 0, group_m: float = 150) -> list[dict[str, Any]]:
+        """Trip ends (and starts) with no place name since since_ts, all cars, grouped
+        within group_m of the group's first stop; most visited first."""
+        places = self.places()
+        groups: list[dict[str, Any]] = []
+        rows = self._exec(
+            "SELECT start_ts, end_ts, start_place, start_lat, start_lon, end_place, end_lat, end_lon "
+            "FROM trips WHERE start_ts >= ? ORDER BY start_ts DESC",
+            (since_ts,),
+        )
+        for r in rows:
+            d = self._name_trip(dict(r), places)
+            for end, ts, came_from in (("end", d["end_ts"], d["start_place"]), ("start", d["start_ts"], None)):
+                lat, lon = d[f"{end}_lat"], d[f"{end}_lon"]
+                if d[f"{end}_place"] or lat is None or lon is None:
+                    continue
+                g = next((g for g in groups if distance_m(g["lat"], g["lon"], lat, lon) < group_m), None)
+                if g is None:
+                    g = {"lat": lat, "lon": lon, "visits": 0, "last_ts": ts, "from": {}}
+                    groups.append(g)
+                g["visits"] += 1
+                g["last_ts"] = max(g["last_ts"], ts)
+                if came_from:
+                    g["from"][came_from] = g["from"].get(came_from, 0) + 1
+        groups.sort(key=lambda g: (-g["visits"], -g["last_ts"]))
+        for g in groups:
+            frm = g.pop("from")
+            g["usually_from"] = max(frm, key=frm.get) if frm else None
+        return groups
+
     # ----- trip labels -------------------------------------------------------------------
     # Kept apart from the trips table, keyed by car + start time (whole seconds),
     # so re-importing history (which rebuilds trip rows) never loses them.
