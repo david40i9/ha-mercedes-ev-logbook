@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from datetime import timedelta
+from functools import partial
 from typing import Any
 
 import aiohttp
@@ -71,6 +72,9 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_labels)
     websocket_api.async_register_command(hass, ws_place_labels)
     websocket_api.async_register_command(hass, ws_unnamed_places)
+    websocket_api.async_register_command(hass, ws_ignored_places)
+    websocket_api.async_register_command(hass, ws_place_ignore)
+    websocket_api.async_register_command(hass, ws_place_unignore)
     websocket_api.async_register_command(hass, ws_place_label_set)
     websocket_api.async_register_command(hass, ws_rates)
     websocket_api.async_register_command(hass, ws_rate_save)
@@ -271,6 +275,48 @@ async def ws_unnamed_places(hass: HomeAssistant, connection, msg: dict[str, Any]
     db = hass.data[DOMAIN]["db"]
     since = dt_util.utcnow().timestamp() - msg["days"] * 86400
     connection.send_result(msg["id"], await hass.async_add_executor_job(db.unnamed_stops, since))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/ignored_places", vol.Optional("days", default=365): vol.All(int, vol.Range(min=1))}
+)
+@websocket_api.async_response
+async def ws_ignored_places(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Unnamed places the user chose to ignore, shaped like unnamed_places plus ignored_id.
+    Only places with a stop in the last `days` are listed."""
+    db = hass.data[DOMAIN]["db"]
+    since = dt_util.utcnow().timestamp() - msg["days"] * 86400
+    connection.send_result(
+        msg["id"], await hass.async_add_executor_job(partial(db.unnamed_stops, since, ignored=True))
+    )
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/place_ignore",
+        vol.Required("lat"): vol.All(vol.Coerce(float), vol.Range(min=-90, max=90)),
+        vol.Required("lon"): vol.All(vol.Coerce(float), vol.Range(min=-180, max=180)),
+    }
+)
+@websocket_api.async_response
+async def ws_place_ignore(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Accept that an unnamed place needs no name: drop it from the "needs a name" list."""
+    db = hass.data[DOMAIN]["db"]
+    spot_id = await hass.async_add_executor_job(
+        db.ignore_spot, msg["lat"], msg["lon"], dt_util.utcnow().timestamp()
+    )
+    connection.send_result(msg["id"], {"id": spot_id})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/place_unignore", vol.Required("id"): int})
+@websocket_api.async_response
+async def ws_place_unignore(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Put an ignored place back on the "needs a name" list."""
+    db = hass.data[DOMAIN]["db"]
+    await hass.async_add_executor_job(db.unignore_spot, msg["id"])
+    connection.send_result(msg["id"], {"ok": True})
 
 
 @websocket_api.require_admin
