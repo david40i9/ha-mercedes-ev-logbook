@@ -114,7 +114,7 @@ class MBLogbookCard extends HTMLElement {
     }
     const { start, end } = this._range();
     const args = { entry_id: this._car.entry_id, start, end };
-    const [trips, charges, places, rates, labels, placeLabels, unnamed] = await Promise.all([
+    const [trips, charges, places, rates, labels, placeLabels, unnamed, ignored] = await Promise.all([
       this._hass.callWS({ type: "mb_logbook/trips", ...args }),
       this._hass.callWS({ type: "mb_logbook/charges", ...args }),
       this._hass.callWS({ type: "mb_logbook/places" }),
@@ -122,9 +122,11 @@ class MBLogbookCard extends HTMLElement {
       this._hass.callWS({ type: "mb_logbook/labels" }).catch(() => ["Business", "Personal", "Commute"]),
       this._hass.callWS({ type: "mb_logbook/place_labels" }).catch(() => []),
       this._hass.callWS({ type: "mb_logbook/unnamed_places" }).catch(() => []),
+      this._hass.callWS({ type: "mb_logbook/ignored_places" }).catch(() => []),
     ]);
     this._placeLabels = placeLabels;
     this._unnamed = unnamed;
+    this._ignored = ignored;
     this._rates = rates;
     this._labels = labels;
     this._trips = trips;
@@ -179,24 +181,38 @@ class MBLogbookCard extends HTMLElement {
       .join("");
   }
 
-  /** Places tab: stops with no place name yet (last 12 months, all cars), most visited first. */
+  /** Places tab: stops with no place name yet (last 12 months, all cars), most visited first,
+   * then the ones the user chose to ignore (folded away, each can be put back). */
   _unnamedSection() {
     const list = (this._unnamed || []).slice(0, 20);
-    if (!list.length) return "";
+    const ignored = this._ignored || [];
+    if (!list.length && !ignored.length) return "";
     const admin = this._hass.user?.is_admin;
-    const total = this._unnamed.length;
+    const total = (this._unnamed || []).length;
+    const where = (u) => (u.usually_from ? `Usually from ${esc(u.usually_from)}` : `${u.lat.toFixed(4)}, ${u.lon.toFixed(4)}`);
     const rows = list
       .map((u, i) => {
         const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
-        const where = u.usually_from ? `Usually from ${esc(u.usually_from)}` : `${u.lat.toFixed(4)}, ${u.lon.toFixed(4)}`;
-        return `<tr><td>Unnamed place<div class=dim>${where}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
-            <td class=n>${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button>` : ""}</td></tr>
+        return `<tr><td>Unnamed place<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+            <td class="n acts">${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class=ignore data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td></tr>
           ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
-    return `<h3 class=sub>Needs a name <span class=badge>${total}</span></h3>
-      <div class=dim>Places the car stopped in the last 12 months that have no name yet, most visited first${total > list.length ? ` (top ${list.length} shown)` : ""}.</div>
-      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+    const needs = list.length
+      ? `<h3 class=sub>Needs a name <span class=badge>${total}</span></h3>
+      <div class=dim>Places the car stopped in the last 12 months that have no name yet, most visited first${total > list.length ? ` (top ${list.length} shown)` : ""}. Ignore one that doesn't need a name.</div>
+      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : "";
+    const ign = ignored.length
+      ? `<details class=ignored${this._showIgnored ? " open" : ""}><summary>Ignored places (${ignored.length})</summary>
+      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
+        .map(
+          (u) => `<tr><td>Unnamed place<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+            <td class=n>${admin ? `<button class=nameit data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td></tr>`
+        )
+        .join("")}</tbody></table></details>`
+      : "";
+    return `${needs}${ign}
       <h3 class=sub>Named places</h3>`;
   }
 
@@ -1124,7 +1140,33 @@ class MBLogbookCard extends HTMLElement {
         await this._load();
       })
     );
-    root.querySelectorAll("button.nameit").forEach((b) =>
+    root.querySelector("details.ignored")?.addEventListener("toggle", (e) => (this._showIgnored = e.target.open));
+    root.querySelectorAll("button.ignore").forEach((b) =>
+      b.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        const u = this._unnamed[Number(b.dataset.id)];
+        try {
+          await this._hass.callWS({ type: "mb_logbook/place_ignore", lat: u.lat, lon: u.lon });
+        } catch (e) {
+          alert(`Couldn't ignore the place: ${e.message || e.code || e}`);
+          return;
+        }
+        await this._load();
+      })
+    );
+    root.querySelectorAll("button[data-unignore]").forEach((b) =>
+      b.addEventListener("click", async (ev) => {
+        ev.stopPropagation();
+        try {
+          await this._hass.callWS({ type: "mb_logbook/place_unignore", id: Number(b.dataset.unignore) });
+        } catch (e) {
+          alert(`Couldn't restore the place: ${e.message || e.code || e}`);
+          return;
+        }
+        await this._load();
+      })
+    );
+    root.querySelectorAll("button.nameit:not([data-unignore])").forEach((b) =>
       b.addEventListener("click", (ev) => {
         ev.stopPropagation();
         const id = Number(b.dataset.id);
@@ -1303,6 +1345,11 @@ MBLogbookCard.css = `
   .chip.live { background: var(--success-color, #43a047); color: #fff; }
   button.nameit { background: none; border: 1px dashed var(--divider-color); border-radius: 8px; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; cursor: pointer; }
   button.nameit:hover { color: var(--primary-color); border-color: var(--primary-color); }
+  button.ignore { background: none; border: none; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; margin-left: 4px; cursor: pointer; text-decoration: underline dotted; }
+  button.ignore:hover { color: var(--primary-color); }
+  td.acts { white-space: nowrap; }
+  details.ignored { margin-top: 10px; }
+  details.ignored summary { cursor: pointer; color: var(--secondary-text-color); font-size: .9em; }
   .nameform { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0 10px; }
   .offpeak { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .nameform label { display: inline-flex; align-items: center; gap: 4px; }
@@ -1319,7 +1366,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.27.0";
+const CARD_VERSION = "0.28.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

@@ -245,6 +245,21 @@ def test_unnamed_stops_group_unnamed_trip_ends(db):
     assert [g["lat"] for g in db.unnamed_stops()] == [51.0]
 
 
+def test_ignored_spots_leave_the_needs_a_name_list(db):
+    db.save_place({"name": "Office", "lat": 52.0, "lon": -1.0, "radius_m": 100})
+    db.add_trip(trip(start_ts=1000, end_ts=2000, start_lat=52.0, start_lon=-1.0, end_lat=52.2, end_lon=-1.2))
+    db.add_trip(trip(start_ts=3000, end_ts=4000, start_lat=52.2004, start_lon=-1.2, end_lat=51.0, end_lon=-2.0))
+    [a, b] = db.unnamed_stops()
+    sid = db.ignore_spot(a["lat"], a["lon"], 5000)
+    assert db.ignore_spot(a["lat"] + 0.0001, a["lon"], 6000) == sid  # ~11 m away: same spot
+    assert [g["lat"] for g in db.unnamed_stops()] == [51.0]
+    [ig] = db.unnamed_stops(ignored=True)
+    assert (ig["lat"], ig["visits"], ig["ignored_id"], ig["usually_from"]) == (a["lat"], 2, sid, "Office")
+    db.unignore_spot(sid)
+    assert len(db.unnamed_stops()) == 2 and db.unnamed_stops(ignored=True) == []
+    assert db.ignored_spots() == []
+
+
 def test_rename_location_moves_stops_rates_and_labels(db):
     db.add_trip(trip(start_place="Work", end_place="Home"))  # no positions: renamed by text
     db.add_charge({"car": "c1", "start_ts": 1, "end_ts": 2, "place": "Work"})

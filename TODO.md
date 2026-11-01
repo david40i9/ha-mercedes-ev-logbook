@@ -48,3 +48,5 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] More tests (130, covering trip counters, restarts, away charges, imports and set-up); the logbook page is removed with the last car and comes back when one is added; YAML-mode dashboards log how to add the card by hand; trip lists load faster (0.25.2)
 - [x] Places tab: named places and Home Assistant zones in one table, with each place's default trip label on its own row; a "Needs a name" list of unnamed stops from the last 12 months, with a count on the Places tab (0.26)
 - [x] Zone changes follow through: renaming, moving, resizing, adding or removing a Home Assistant zone updates past trips and charges, and a rename carries the zone's rates and default trip label (0.27)
+
+- [x] Ignore a place that doesn't need a name: it leaves the "Needs a name" list and count, sits under "Ignored places" and can be put back; the ignore list is kept in Home Assistant, so the Android app shares it (0.28)

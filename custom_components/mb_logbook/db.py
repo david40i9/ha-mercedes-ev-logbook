@@ -89,6 +89,13 @@ CREATE TABLE IF NOT EXISTS charge_rates (
     rate REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS charge_rates_loc ON charge_rates (location, valid_from);
+-- Unnamed stops the user chose not to name; left out of the "needs a name" list
+CREATE TABLE IF NOT EXISTS ignored_spots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    ignored_ts REAL NOT NULL
+);
 """
 
 # Columns added after 0.1.0: (table, column, type)
@@ -502,10 +509,28 @@ class LogbookDB:
                     counts[name] = counts.get(name, 0) + 1
         return [{"location": k, "visits": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]
 
-    def unnamed_stops(self, since_ts: float = 0, group_m: float = 150) -> list[dict[str, Any]]:
+    def ignored_spots(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._exec("SELECT * FROM ignored_spots ORDER BY ignored_ts DESC")]
+
+    def ignore_spot(self, lat: float, lon: float, ts: float) -> int:
+        """Stop asking for a name for stops near lat/lon (reuses a spot already close by)."""
+        for s in self.ignored_spots():
+            if distance_m(lat, lon, s["lat"], s["lon"]) < 25:
+                return int(s["id"])
+        return self._insert("ignored_spots", ("lat", "lon", "ignored_ts"), (lat, lon, ts))
+
+    def unignore_spot(self, spot_id: int) -> None:
+        self._exec("DELETE FROM ignored_spots WHERE id = ?", (spot_id,))
+
+    def unnamed_stops(
+        self, since_ts: float = 0, group_m: float = 150, ignored: bool = False
+    ) -> list[dict[str, Any]]:
         """Trip ends (and starts) with no place name since since_ts, all cars, grouped
-        within group_m of the group's first stop; most visited first."""
+        within group_m of the group's first stop; most visited first. Groups within
+        group_m of an ignored spot are left out, or with ignored=True are the only
+        ones returned (each with the spot's ignored_id)."""
         places = self.places()
+        spots = self.ignored_spots()
         groups: list[dict[str, Any]] = []
         rows = self._exec(
             "SELECT start_ts, end_ts, start_place, start_lat, start_lon, end_place, end_lat, end_lon "
@@ -526,11 +551,18 @@ class LogbookDB:
                 g["last_ts"] = max(g["last_ts"], ts)
                 if came_from:
                     g["from"][came_from] = g["from"].get(came_from, 0) + 1
-        groups.sort(key=lambda g: (-g["visits"], -g["last_ts"]))
+        kept = []
         for g in groups:
+            spot = next((s for s in spots if distance_m(g["lat"], g["lon"], s["lat"], s["lon"]) < group_m), None)
+            if (spot is not None) == ignored:
+                if spot is not None:
+                    g["ignored_id"] = spot["id"]
+                kept.append(g)
+        kept.sort(key=lambda g: (-g["visits"], -g["last_ts"]))
+        for g in kept:
             frm = g.pop("from")
             g["usually_from"] = max(frm, key=frm.get) if frm else None
-        return groups
+        return kept
 
     # ----- trip labels -------------------------------------------------------------------
     # Kept apart from the trips table, keyed by car + start time (whole seconds),

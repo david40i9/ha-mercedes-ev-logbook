@@ -54,6 +54,8 @@ async def test_writes_need_an_admin(ha, car, hass_ws_client, hass_read_only_acce
     await client.send_json({"id": 2, "type": "mb_logbook/trips", "entry_id": car.entry_id})
     assert (await client.receive_json())["success"]  # reading is allowed
     assert len(await trips(ha, car)) == 1
+    await client.send_json({"id": 3, "type": "mb_logbook/place_ignore", "lat": 52.0, "lon": -1.0})
+    assert (await client.receive_json())["error"]["code"] == "unauthorized"
 
 
 async def test_labels_and_place_defaults(ha, car, ws, advance):
@@ -68,6 +70,10 @@ async def test_labels_and_place_defaults(ha, car, ws, advance):
     assert rows["Home"]["is_home"] and rows["Home"]["label"] == "Commute"
     assert (await ws("unnamed_places"))["success"]
     assert not (await ws("unnamed_places", days=0))["success"]
+    sid = (await ws("place_ignore", lat=52.0, lon=-1.0))["result"]["id"]
+    assert (await ws("ignored_places"))["success"]
+    assert not (await ws("place_ignore", lat=95, lon=0))["success"]
+    assert (await ws("place_unignore", id=sid))["success"]
 
 
 async def test_rates_validate_and_cost_charges(ha, car, ws):
