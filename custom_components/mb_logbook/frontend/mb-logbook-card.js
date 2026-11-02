@@ -190,10 +190,15 @@ class MBLogbookCard extends HTMLElement {
     const admin = this._hass.user?.is_admin;
     const total = (this._unnamed || []).length;
     const where = (u) => (u.usually_from ? `Usually from ${esc(u.usually_from)}` : `${u.lat.toFixed(4)}, ${u.lon.toFixed(4)}`);
+    // "Unnamed place" plus where it is: "2.1 mi NE of Home".
+    const unnamedLabel = (u) => {
+      const near = this._near(u.lat, u.lon);
+      return near ? `Unnamed place <span class=dim>· ${esc(near.text)}</span>` : "Unnamed place";
+    };
     const rows = list
       .map((u, i) => {
         const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
-        return `<tr><td>Unnamed place<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+        return `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
             <td class="n acts">${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class=ignore data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td></tr>
           ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
       })
@@ -207,7 +212,7 @@ class MBLogbookCard extends HTMLElement {
       ? `<details class=ignored${this._showIgnored ? " open" : ""}><summary>Ignored places (${ignored.length})</summary>
       <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
         .map(
-          (u) => `<tr><td>Unnamed place<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
+          (u) => `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
             <td class=n>${admin ? `<button class=nameit data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td></tr>`
         )
         .join("")}</tbody></table></details>`
@@ -404,7 +409,12 @@ class MBLogbookCard extends HTMLElement {
       : paths.length
         ? this._bounds(paths.flatMap((p) => p.points.map((q) => [q.latitude, q.longitude])))
         : null;
-    if (bounds) map.fitBounds(bounds, { zoom: 17, pad: 0.15 });
+    if (bounds) {
+      map.fitBounds(bounds, { zoom: 17, pad: 0.15 });
+      // Naming a place: the route is drawn for context, but the view belongs on the
+      // place. ha-map can settle on its paths after our first fit, so fit again.
+      if (edit) setTimeout(() => this._map === map && map.fitBounds(bounds, { zoom: 17, pad: 0.15 }), 500);
+    }
   }
 
   /** Radius picked from the list: resize the circle without moving the view. */
@@ -515,11 +525,41 @@ class MBLogbookCard extends HTMLElement {
     }
   }
 
-  _place(name, lat, kind, id, end) {
+  /**
+   * Context for a stop that has no name: the closest named place or HA zone, with
+   * distance and compass direction ("2.1 mi NE of Home"). Worked out from the places
+   * already loaded, so nothing leaves Home Assistant. null when there is nothing to go by.
+   */
+  _near(lat, lon) {
+    if (lat == null || lon == null) return null;
+    const rad = Math.PI / 180;
+    let best = null;
+    for (const p of this._places || []) {
+      if (p.lat == null || p.lon == null || !p.name) continue;
+      const a =
+        Math.sin(((p.lat - lat) * rad) / 2) ** 2 +
+        Math.cos(lat * rad) * Math.cos(p.lat * rad) * Math.sin(((p.lon - lon) * rad) / 2) ** 2;
+      const m = 12742000 * Math.asin(Math.sqrt(a));
+      if (!best || m < best.m) best = { m, p };
+    }
+    if (!best) return null;
+    // Bearing from the named place out to the stop.
+    const { p } = best;
+    const dLon = (lon - p.lon) * rad;
+    const y = Math.sin(dLon) * Math.cos(lat * rad);
+    const x = Math.cos(p.lat * rad) * Math.sin(lat * rad) - Math.sin(p.lat * rad) * Math.cos(lat * rad) * Math.cos(dLon);
+    const deg = (Math.atan2(y, x) / rad + 360) % 360;
+    const dir = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+    return { name: p.name, text: `${this._dist(best.m / 1000)} ${dir} of ${p.name}` };
+  }
+
+  _place(name, lat, kind, id, end, lon) {
     if (name) return esc(name);
     if (lat == null) return "–";
-    if (!this._hass.user?.is_admin) return "<span class=dim>unnamed</span>";
-    return `<button class=nameit data-kind="${kind}" data-id="${id}" data-end="${end || ""}">unnamed · name it</button>`;
+    const near = this._near(lat, lon);
+    const hint = near ? ` near ${esc(near.name)}` : "";
+    if (!this._hass.user?.is_admin) return `<span class=dim>unnamed${hint}</span>`;
+    return `<button class=nameit data-kind="${kind}" data-id="${id}" data-end="${end || ""}"${near ? ` title="${esc(near.text)}"` : ""}>unnamed${hint} · name it</button>`;
   }
 
   _nameForm(lat, lon) {
@@ -536,6 +576,7 @@ class MBLogbookCard extends HTMLElement {
         <select id=pradius title="Anything within this distance gets the name">${radii}</select>
         <button class=primary id=psave data-lat="${lat}" data-lon="${lon}">Save</button>
         <button id=pcancel>Cancel</button>
+        <button id=pignore title="It doesn't need a name: stop asking about it on the Places tab">Ignore</button>
         <button id=psuggest title="Asks OpenStreetMap for named places near the pin. Only this point is sent.">Suggest names</button>
         <div id=psuggestions class=suggestions></div>
         <div class=dim>Drag the pin on the map to move the place, or the circle's edge to resize it. This stop (the small dot) always keeps the name, even if the GPS put it outside the circle. The name also applies to every trip and charge inside the circle or near the dot, past and future. Using a name you already have links this stop to that place.</div>
@@ -779,7 +820,8 @@ class MBLogbookCard extends HTMLElement {
       kwh != null ? `${kwh.toFixed(1)} kWh` : null,
       c.cost ? this._money(c.cost) : null,
     ].filter(Boolean);
-    const where = c.place ? esc(c.place) : "unnamed place";
+    const near = c.place ? null : this._near(c.lat, c.lon);
+    const where = c.place ? esc(c.place) : `unnamed place${near ? ` near ${esc(near.name)}` : ""}`;
     return `<tr class=chargeline><td colspan=9>⚡ Charged at ${where} <span class=dim>· ${bits.join(" · ")}</span></td></tr>`;
   }
 
@@ -845,7 +887,7 @@ class MBLogbookCard extends HTMLElement {
           : "";
         return `<tr class="trip ${open ? "open" : ""}" data-id="${x.id}">
             <td>${this._when(x.start_ts)}<div class=dim>${this._dur(x.end_ts - x.start_ts)}</div></td>
-            <td>${this._place(x.start_place, x.start_lat, "trip", x.id, "start")} → ${this._place(x.end_place, x.end_lat, "trip", x.id, "end")}</td>
+            <td>${this._place(x.start_place, x.start_lat, "trip", x.id, "start", x.start_lon)} → ${this._place(x.end_place, x.end_lat, "trip", x.id, "end", x.end_lon)}</td>
             <td>${this._labelCell(x)}</td>
             <td class=n>${this._dist(x.distance_km)}</td>
             <td class=n>${used}</td>
@@ -879,7 +921,7 @@ class MBLogbookCard extends HTMLElement {
           : "";
         return `<tr>
           <td>${this._when(c.start_ts)}<div class=dim>${this._dur(c.end_ts - c.start_ts)}</div></td>
-          <td>${this._place(c.place, c.lat, "charge", c.id)}${c.at_home ? " <span class=chip>home</span>" : ""}</td>
+          <td>${this._place(c.place, c.lat, "charge", c.id, undefined, c.lon)}${c.at_home ? " <span class=chip>home</span>" : ""}</td>
           <td class=n>${c.soc_start ?? "–"}→${c.soc_end ?? "–"}%</td>
           <td class=n>${kwh != null ? kwh.toFixed(1) + " kWh" : "–"}<div class=dim>${src}</div></td>
           <td class=n>${c.max_power_kw ? c.max_power_kw.toFixed(1) + " kW" : "–"}</td>
@@ -1203,6 +1245,15 @@ class MBLogbookCard extends HTMLElement {
       save.addEventListener("click", submit);
       root.getElementById("pname").addEventListener("keydown", (e) => e.key === "Enter" && submit());
       root.getElementById("psuggest").addEventListener("click", () => this._suggestNames());
+      root.getElementById("pignore").addEventListener("click", async () => {
+        try {
+          await this._hass.callWS({ type: "mb_logbook/place_ignore", lat: Number(save.dataset.lat), lon: Number(save.dataset.lon) });
+        } catch (e) {
+          alert(`Couldn't ignore the place: ${e.message || e.code || e}`);
+          return;
+        }
+        await this._load();
+      });
       root.getElementById("pcancel").addEventListener("click", () => {
         this._naming = null;
         this._render();
@@ -1366,7 +1417,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.28.0";
+const CARD_VERSION = "0.29.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
