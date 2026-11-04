@@ -7,6 +7,9 @@ from unittest.mock import patch
 
 from homeassistant.components.frontend import DATA_PANELS
 from homeassistant.components.lovelace.const import LOVELACE_DATA
+from homeassistant.core import Context
+from homeassistant.exceptions import Unauthorized
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.mb_logbook import CARD_URL, PANEL_PATH, _async_register_card
@@ -103,6 +106,31 @@ async def test_a_failing_first_import_does_not_stop_logging(ha, advance, caplog)
     assert "History import failed for Test car" in caplog.text
     await drive(ha, advance)
     assert len(await trips(ha, entry)) == 1
+
+
+async def test_services_need_an_admin(ha, car, hass_admin_user, hass_read_only_user):
+    """A read-only login is refused; an admin, or an automation (no user), gets through."""
+    calls = (("import_history", {"days": 1}, True), ("send_summary", {}, False))
+    with (
+        patch("custom_components.mb_logbook.async_import_history", return_value={"trips": 0, "charges": 0}) as imported,
+        patch("custom_components.mb_logbook.async_send_summary") as sent,
+    ):
+        for service, data, response in calls:
+            with pytest.raises(Unauthorized):
+                await ha.services.async_call(
+                    DOMAIN, service, data, blocking=True, return_response=response,
+                    context=Context(user_id=hass_read_only_user.id),
+                )
+        imported.assert_not_called()
+        sent.assert_not_called()
+
+        for context in (Context(user_id=hass_admin_user.id), Context()):
+            for service, data, response in calls:
+                await ha.services.async_call(
+                    DOMAIN, service, data, blocking=True, return_response=response, context=context
+                )
+        assert imported.call_count == 2
+        assert sent.call_count == 2
 
 
 async def test_import_service_can_target_one_car(ha):

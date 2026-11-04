@@ -19,6 +19,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.typing import ConfigType
@@ -126,6 +127,7 @@ async def _async_import(hass: HomeAssistant, entry: LogbookConfigEntry, days: in
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    # Admin services: a non-admin login is refused; automations and scripts have no user, so they still work.
     async def _service(call: ServiceCall) -> ServiceResponse:
         days = call.data.get("days", 365)
         wanted = call.data.get("config_entry_id")
@@ -136,7 +138,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             results[entry.title] = await _async_import(hass, entry, days)
         return results
 
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         "import_history",
         _service,
@@ -156,7 +159,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             if not wanted or entry.entry_id == wanted:
                 await async_send_summary(hass, entry.runtime_data, dt_util.now())
 
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         "send_summary",
         _summary,
