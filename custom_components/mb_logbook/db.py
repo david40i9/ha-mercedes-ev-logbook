@@ -705,17 +705,18 @@ class LogbookDB:
         rows = self.charges(car, 0, 1e12, limit=1)
         return rows[0] if rows else None
 
-    def replace_before(
-        self, car: str, cutoff_ts: float, trips: list[dict[str, Any]], charges: list[dict[str, Any]]
+    def replace_between(
+        self, car: str, start_ts: float, end_ts: float, trips: list[dict[str, Any]], charges: list[dict[str, Any]]
     ) -> None:
-        """Swap in imported history: drop this car's rows before the cut-off, insert new ones."""
+        """Swap in imported history: drop this car's rows in the window, insert new ones."""
         trip_rows = [_trip_row(t) for t in trips]
         charge_rows = [_charge_row(c) for c in charges]
         with self._lock:
             assert self._conn is not None
             with self._conn:  # one transaction
-                self._conn.execute("DELETE FROM trips WHERE car = ? AND start_ts < ?", (car, cutoff_ts))
-                self._conn.execute("DELETE FROM charges WHERE car = ? AND start_ts < ?", (car, cutoff_ts))
+                window = (car, start_ts, end_ts)
+                self._conn.execute("DELETE FROM trips WHERE car = ? AND start_ts >= ? AND start_ts < ?", window)
+                self._conn.execute("DELETE FROM charges WHERE car = ? AND start_ts >= ? AND start_ts < ?", window)
                 self._conn.executemany(_insert_sql("trips", TRIP_COLS), trip_rows)
                 self._conn.executemany(_insert_sql("charges", CHARGE_COLS), charge_rows)
 

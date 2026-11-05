@@ -390,10 +390,16 @@ async def async_import_history(
     if replay.charge and "off_ts" in replay.charge:
         replay.end_charge()
 
-    db = logger.db
-    await hass.async_add_executor_job(
-        db.replace_before, logger.car_id, end_ts, replay.trips, replay.charges
-    )
+    # Replace only what the recorder could rebuild. Older rows may be all that's left
+    # of them, so they stay, and with no history at all nothing is deleted.
+    first_ts = next((ts for ts, _, eid, _ in events if eid != temp_id), None)
+    if first_ts is None:
+        _LOGGER.info("%s: no recorded history before the cut-off, so the log is unchanged", logger.car_id)
+    else:
+        await hass.async_add_executor_job(
+            logger.db.replace_between, logger.car_id, max(first_ts, start.timestamp()), end_ts,
+            replay.trips, replay.charges,
+        )
     logger.adopt_imported_park(replay.park, end_ts)
     _LOGGER.info(
         "%s: imported %d trips and %d charges from history (%s to %s)",

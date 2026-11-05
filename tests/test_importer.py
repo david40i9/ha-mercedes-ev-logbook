@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.components.recorder.common import async_wait_recording_done
@@ -111,6 +113,38 @@ async def test_reimport_never_touches_live_rows(ha, car, advance):
     # Cut-off before the live trip: nothing to import, and the live trip stays.
     await async_import_history(ha, car.runtime_data, dt_util.utc_from_timestamp(live["start_ts"] - 60), days=1)
     assert [t["id"] for t in await trips(ha, car)] == [live["id"]]
+
+
+async def old_row(ha, car, start_ts):
+    """A row from an earlier import, with history the recorder may no longer hold."""
+    row = {"car": car.runtime_data.car_id, "start_ts": start_ts, "end_ts": start_ts + 600, "distance_km": 5.0}
+    await ha.async_add_executor_job(car.runtime_data.db.add_trip, row)
+
+
+async def test_import_with_no_history_deletes_nothing(ha, car, advance):
+    """The recorder has purged everything before the cut-off, e.g. a car added long ago."""
+    await async_wait_recording_done(ha)
+    cutoff = dt_util.utcnow() - timedelta(days=30)
+    start_ts = (cutoff - timedelta(hours=1)).timestamp()
+    await old_row(ha, car, start_ts)
+    counts = await async_import_history(ha, car.runtime_data, cutoff, days=365)
+    assert counts == {"trips": 0, "charges": 0}
+    assert [t["start_ts"] for t in await trips(ha, car)] == [start_ts]
+
+
+async def test_import_only_replaces_what_the_recorder_still_has(ha, car, advance):
+    await drive(ha, advance)
+    await async_wait_recording_done(ha)
+    now = dt_util.utcnow()
+    outside_window = (now - timedelta(days=3)).timestamp()
+    before_history = (now - timedelta(hours=12)).timestamp()
+    await old_row(ha, car, outside_window)
+    await old_row(ha, car, before_history)
+    counts = await async_import_history(ha, car.runtime_data, now, days=1)
+    assert counts["trips"] == 1
+    found = sorted(t["start_ts"] for t in await trips(ha, car))
+    assert found[:2] == [outside_window, before_history]
+    assert len(found) == 3  # the drive was replaced, not duplicated
 
 
 async def test_import_service_returns_counts_per_car(ha, car, advance):

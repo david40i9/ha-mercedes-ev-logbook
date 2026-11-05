@@ -155,12 +155,13 @@ def test_adding_a_new_rate_never_changes_earlier_charges(db):
     assert db.charges("c1", 0, 1e12)[0]["cost"] == 2.0
 
 
-def test_replace_before_only_touches_older_rows_of_that_car(db):
+def test_replace_between_only_touches_that_window_of_that_car(db):
+    db.add_trip(trip(start_ts=50.0))
     db.add_trip(trip(start_ts=100.0))
     db.add_trip(trip(start_ts=9000.0))
     db.add_trip(trip(car="c2", start_ts=100.0))
-    db.replace_before("c1", 5000, [trip(start_ts=200.0), trip(start_ts=300.0)], [])
-    assert sorted(t["start_ts"] for t in db.trips("c1", 0, 1e12)) == [200.0, 300.0, 9000.0]
+    db.replace_between("c1", 80, 5000, [trip(start_ts=200.0), trip(start_ts=300.0)], [])
+    assert sorted(t["start_ts"] for t in db.trips("c1", 0, 1e12)) == [50.0, 200.0, 300.0, 9000.0]
     assert len(db.trips("c2", 0, 1e12)) == 1
 
 
@@ -168,7 +169,7 @@ def test_labels_survive_a_reimport(db):
     db.add_trip(trip(start_ts=100.4))
     [t] = db.trips("c1", 0, 1e12)
     db.set_trip_label(t["id"], "Business")
-    db.replace_before("c1", 5000, [trip(start_ts=100.4)], [])
+    db.replace_between("c1", 0, 5000, [trip(start_ts=100.4)], [])
     assert db.trips("c1", 0, 1e12)[0]["label"] == "Business"
 
 
