@@ -160,6 +160,7 @@ If your dashboards are in YAML mode, the resource can't be added for you, so the
 <summary>Actions</summary>
 
 - **Import history**: rebuild trips and charges from Home Assistant's recorded history for the time before the car was added. It runs once automatically; re-running replaces only imported rows, never live ones.
+- **Fill in missed trips**: add driving that wasn't logged, for example while Home Assistant was offline (see below). Safe to run again.
 - **Send monthly summary**: send last month's summary now.
 </details>
 
@@ -171,6 +172,8 @@ A trip starts when the ignition leaves "off" and ends when it has been off for a
 Without an ignition sensor, a trip starts when the car moves (odometer or trip counter up, or a position jump of 200 m or more) and ends after the same few minutes without movement.
 
 Distance comes from the car's 0.1-resolution "distance since start" counter, checked against the odometer. Ignition events that don't move the car, such as pre-conditioning, are ignored.
+
+**Missed trips.** If Home Assistant is offline (or the car's connection is down) while you drive, nothing sees the trip, but the odometer still moves. When the next trip ends, the logbook compares its starting odometer with where the last trip ended; a jump of more than 3 km is logged as a *missed* trip with that distance, from where the car was parked to where it was next seen. Its time is the window the recorder can narrow it to, there's no route, and several drives in one gap become one trip, so split the distance or relabel it if you need to. For a gap that's already behind you, run **Fill in missed trips**.
 
 Data is stored in `config/mb_logbook.db` (SQLite), which is included in Home Assistant backups.
 </details>

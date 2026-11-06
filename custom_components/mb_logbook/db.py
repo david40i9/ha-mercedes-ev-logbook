@@ -111,13 +111,15 @@ MIGRATIONS = (
     ("charge_rates", "offpeak_end", "TEXT"),
     # kWh from the car's charging power over the session (home, without a meter)
     ("charges", "kwh_power", "REAL"),
+    # 1 = a missed trip, filled in from an odometer jump while HA wasn't watching
+    ("trips", "gap", "INTEGER"),
 )
 
 TRIP_COLS = (
     "car", "start_ts", "end_ts", "odo_start_km", "odo_end_km", "distance_km",
     "soc_start", "soc_end", "range_start_km", "range_end_km",
     "start_lat", "start_lon", "end_lat", "end_lon", "start_place", "end_place",
-    "park_hours", "park_drain_hours", "park_soc_drop", "park_charged", "points", "temp_c",
+    "park_hours", "park_drain_hours", "park_soc_drop", "park_charged", "points", "temp_c", "gap",
 )
 CHARGE_COLS = (
     "car", "start_ts", "end_ts", "soc_start", "soc_end", "kwh_car", "kwh_meter", "kwh_power",
@@ -133,6 +135,7 @@ def _trip_row(trip: dict[str, Any]) -> tuple:
     row = dict(trip)
     row["points"] = json.dumps(row.get("points") or [])
     row["park_charged"] = 1 if row.get("park_charged") else 0
+    row["gap"] = 1 if row.get("gap") else None
     return tuple(row.get(c) for c in TRIP_COLS)
 
 
@@ -468,6 +471,7 @@ class LogbookDB:
         for r in rows:
             d = dict(r)
             d["park_charged"] = bool(d["park_charged"])
+            d["gap"] = bool(d.get("gap"))
             d = self._name_trip(d, places)
             d["label"] = labels.get(round(d["start_ts"]))
             d["label_auto"] = False
@@ -644,6 +648,20 @@ class LogbookDB:
 
     def delete_trip(self, trip_id: int) -> None:
         self._exec("DELETE FROM trips WHERE id = ?", (trip_id,))
+
+    def raw_trips(self, car: str, since_ts: float, limit: int | None = None) -> list[dict[str, Any]]:
+        """Trips as stored, without route points: oldest first, or the newest ``limit``."""
+        cols = ", ".join(["id", *(c for c in TRIP_COLS if c != "points")])
+        if limit is None:
+            rows = self._exec(
+                f"SELECT {cols} FROM trips WHERE car = ? AND start_ts >= ? ORDER BY start_ts", (car, since_ts)
+            )
+            return [dict(r) for r in rows]
+        rows = self._exec(
+            f"SELECT {cols} FROM trips WHERE car = ? AND start_ts >= ? ORDER BY start_ts DESC LIMIT ?",
+            (car, since_ts, limit),
+        )
+        return [dict(r) for r in reversed(rows)]
 
     def last_trip(self, car: str) -> dict[str, Any] | None:
         rows = self._exec(

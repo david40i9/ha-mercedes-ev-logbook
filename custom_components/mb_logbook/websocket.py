@@ -860,6 +860,7 @@ async def ws_merge_trips(hass: HomeAssistant, connection, msg: dict[str, Any]) -
         "end_lon": nxt["end_lon"],
         "end_place": nxt["end_place"],
         "points": first["points"] + nxt["points"],
+        "gap": first.get("gap") or nxt.get("gap"),
     }
     await hass.async_add_executor_job(db.replace_trips, [first["id"], nxt["id"]], [merged])
     _refresh_all(hass)

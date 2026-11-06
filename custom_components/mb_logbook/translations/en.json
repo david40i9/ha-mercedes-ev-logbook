@@ -96,6 +96,14 @@
         "days": { "name": "Days", "description": "How far back to look (limited by how long the recorder keeps history)." }
       }
     },
+    "fill_gaps": {
+      "name": "Fill in missed trips",
+      "description": "Finds driving that wasn't logged, such as while Home Assistant was offline: wherever the odometer moved between two logged trips, it adds a missed trip with that distance, from where the car was parked to where it was next seen. There's no route, and several drives in one gap become one trip. Safe to run again.",
+      "fields": {
+        "config_entry_id": { "name": "Car", "description": "Only this car (default: all cars)." },
+        "days": { "name": "Days", "description": "How far back to look." }
+      }
+    },
     "send_summary": {
       "name": "Send monthly summary",
       "description": "Sends last month's summary now, to each car that has a monthly summary set in its options.",

@@ -744,7 +744,7 @@ class MBLogbookCard extends HTMLElement {
     const unit = this._miles ? "mi" : "km";
     const k = this._miles ? 1 / KM_PER_MI : 1;
     const loc = this._hass.locale?.language;
-    const rows = [["Date", "Start time", "End time", "From", "To", `Distance (${unit})`, `Odometer start (${unit})`, `Odometer end (${unit})`, "Label", "Battery start %", "Battery end %"]];
+    const rows = [["Date", "Start time", "End time", "From", "To", `Distance (${unit})`, `Odometer start (${unit})`, `Odometer end (${unit})`, "Label", "Battery start %", "Battery end %", "Note"]];
     for (const t of [...this._shownTrips].sort((a, b) => a.start_ts - b.start_ts)) {
       const s = new Date(t.start_ts * 1000);
       const e = new Date(t.end_ts * 1000);
@@ -760,6 +760,7 @@ class MBLogbookCard extends HTMLElement {
         t.label || "",
         t.soc_start ?? "",
         t.soc_end ?? "",
+        t.gap ? "Missed while Home Assistant was offline: distance from the odometer, time approximate" : "",
       ]);
     }
     const f = this._labelFilter && this._labelFilter !== "all" ? `-${this._labelFilter === "__none" ? "unlabelled" : this._labelFilter}` : "";
@@ -886,7 +887,7 @@ class MBLogbookCard extends HTMLElement {
           ? this._nameForm(naming.end === "start" ? x.start_lat : x.end_lat, naming.end === "start" ? x.start_lon : x.end_lon)
           : "";
         return `<tr class="trip ${open ? "open" : ""}" data-id="${x.id}">
-            <td>${this._when(x.start_ts)}<div class=dim>${this._dur(x.end_ts - x.start_ts)}</div></td>
+            <td>${this._when(x.start_ts)}<div class=dim>${x.gap ? `<span class=chip title="Driven while Home Assistant wasn't watching (offline, or the car's connection was down). The distance is from the odometer; the drive was some time between ${this._time(x.start_ts)} and ${this._time(x.end_ts)}, and there is no route. Several drives may be in one.">missed</span> by ${this._time(x.end_ts)}` : this._dur(x.end_ts - x.start_ts)}</div></td>
             <td>${this._place(x.start_place, x.start_lat, "trip", x.id, "start", x.start_lon)} → ${this._place(x.end_place, x.end_lat, "trip", x.id, "end", x.end_lon)}</td>
             <td>${this._labelCell(x)}</td>
             <td class=n>${this._dist(x.distance_km)}</td>
@@ -1417,7 +1418,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.29.1";
+const CARD_VERSION = "0.30.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
