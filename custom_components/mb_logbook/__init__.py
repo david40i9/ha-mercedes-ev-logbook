@@ -27,6 +27,7 @@ import voluptuous as vol
 
 from .const import DB_FILENAME, DOMAIN, VERSION, entry_conf
 from .db import LogbookDB
+from .gaps import async_fill_gaps
 from .importer import async_import_history
 from .summary import async_send as async_send_summary, async_setup_summary
 from .logger import CarLogger
@@ -147,6 +148,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             {
                 vol.Optional("config_entry_id"): cv.string,
                 vol.Optional("days", default=365): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650)),
+            }
+        ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def _fill_gaps(call: ServiceCall) -> ServiceResponse:
+        """Add missed trips wherever the odometer jumped between two logged trips."""
+        days = call.data.get("days", 30)
+        wanted = call.data.get("config_entry_id")
+        results = {}
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+            if not wanted or entry.entry_id == wanted:
+                results[entry.title] = {"missed_trips": await async_fill_gaps(hass, entry.runtime_data, days)}
+        return results
+
+    async_register_admin_service(
+        hass,
+        DOMAIN,
+        "fill_gaps",
+        _fill_gaps,
+        schema=vol.Schema(
+            {
+                vol.Optional("config_entry_id"): cv.string,
+                vol.Optional("days", default=30): vol.All(vol.Coerce(int), vol.Range(min=1, max=3650)),
             }
         ),
         supports_response=SupportsResponse.OPTIONAL,

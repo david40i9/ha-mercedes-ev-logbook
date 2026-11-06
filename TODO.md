@@ -50,3 +50,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] Zone changes follow through: renaming, moving, resizing, adding or removing a Home Assistant zone updates past trips and charges, and a rename carries the zone's rates and default trip label (0.27)
 
 - [x] Ignore a place that doesn't need a name: it leaves the "Needs a name" list and count, sits under "Ignored places" and can be put back; the ignore list is kept in Home Assistant, so the Android app shares it (0.28)
+- [x] Missed trips: driving while Home Assistant was offline is logged from the odometer jump, with a **Fill in missed trips** action for past gaps; shown as *missed* on the card and in the CSV (0.30)

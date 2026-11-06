@@ -54,7 +54,7 @@ from .const import (
     STORAGE_VERSION,
     UNKNOWN_STATES,
 )
-from . import rules
+from . import gaps, rules
 from .db import LogbookDB, distance_m
 from .temperature import temp_c, temp_source
 
@@ -551,6 +551,7 @@ class CarLogger:
             "points": points,
             "temp_c": trip.get("temp_c"),
         }
+        await self._async_fill_gap(record)
         await self.hass.async_add_executor_job(self.db.add_trip, record)
         # A charge that started before the trip was closed belongs to this park.
         self._state["park"] = rules.new_park(
@@ -560,6 +561,30 @@ class CarLogger:
         )
         self._save()
         self._notify()
+
+    async def _async_fill_gap(self, record: dict[str, Any]) -> None:
+        """Log driving the odometer shows since the last trip as a missed trip.
+
+        Happens when Home Assistant, or the car's connection, was down for a drive.
+        """
+        try:
+            last = await self.hass.async_add_executor_job(self.db.raw_trips, self.car_id, 0, 1)
+            prev = last[0] if last else None
+            km = gaps.missed_km(prev, record, gaps.gap_min_km(self.conf))
+            if km is None:
+                return
+            lo, hi = await gaps.async_window(self.hass, self.conf, prev, record["start_ts"], record["odo_start_km"])
+            await self.hass.async_add_executor_job(
+                self.db.add_trip, gaps.missed_trip(self, prev, record, lo, hi)
+            )
+        except Exception:  # noqa: BLE001 - never lose the trip itself over this
+            _LOGGER.exception("%s: couldn't log the missed driving before this trip", self.car_id)
+            return
+        _LOGGER.warning("%s: %.1f km driven while not watched; logged as a missed trip", self.car_id, km)
+        # The park before this trip began when the missed driving ended, at an unknown time.
+        for key in ("park_hours", "park_drain_hours", "park_soc_drop"):
+            record[key] = None
+        record["park_charged"] = False
 
     # ----- charging -------------------------------------------------------------------
 
