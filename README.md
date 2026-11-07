@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/releases"><img src="https://img.shields.io/github/v/release/david40i9/ha-mercedes-ev-logbook?style=flat-square&label=release" alt="release"></a>
-  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=david40i9&repository=ha-mercedes-ev-logbook&category=integration"><img src="https://img.shields.io/badge/HACS-custom-41BDF5?style=flat-square" alt="HACS custom"></a>
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=david40i9&repository=ha-mercedes-ev-logbook&category=integration"><img src="https://img.shields.io/badge/HACS-default-41BDF5?style=flat-square" alt="HACS default"></a>
   <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/actions/workflows/validate.yml"><img src="https://img.shields.io/github/actions/workflow/status/david40i9/ha-mercedes-ev-logbook/validate.yml?style=flat-square&label=validation" alt="validation"></a>
   <img src="https://img.shields.io/badge/Home%20Assistant-2026.3%2B-18BCF2?style=flat-square" alt="Home Assistant 2026.3+">
   <a href="https://github.com/david40i9/ha-mercedes-ev-logbook/blob/main/LICENSE"><img src="https://img.shields.io/badge/licence-MIT-97CA00?style=flat-square" alt="MIT licence"></a>
@@ -72,7 +72,7 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=david40i9&repository=ha-mercedes-ev-logbook&category=integration)
 
-1. Use the button above, or in **HACS** open the **⋮** menu → **Custom repositories** and add `https://github.com/david40i9/ha-mercedes-ev-logbook` as an **Integration**.
+1. In **HACS**, search for **Mercedes EV Logbook** (or use the button above).
 2. Select **Download**, then restart Home Assistant.
 3. Go to **Settings → Devices & services → Add integration → Mercedes EV Logbook** ([open it](https://my.home-assistant.io/redirect/config_flow_start/?domain=mb_logbook)) and pick your car.
 
