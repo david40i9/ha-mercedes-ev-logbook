@@ -19,6 +19,14 @@ jobs:
           want="${GITHUB_REF_NAME#v}"
           have=$(python3 -c "import json;print(json.load(open('custom_components/mb_logbook/manifest.json'))['version'])")
           [ "$want" = "$have" ] || { echo "Tag $GITHUB_REF_NAME but manifest says $have"; exit 1; }
+      - name: Zip the integration for HACS
+        # hacs.json has zip_release, so HACS installs this file. Its contents
+        # go straight into config/custom_components/mb_logbook.
+        run: |
+          cd custom_components/mb_logbook
+          zip -r -X "$GITHUB_WORKSPACE/mb_logbook.zip" . -x '*__pycache__*' '*.pyc'
+          unzip -l "$GITHUB_WORKSPACE/mb_logbook.zip" | grep -q ' manifest.json$'
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          files: mb_logbook.zip
