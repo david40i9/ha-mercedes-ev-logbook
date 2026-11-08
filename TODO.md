@@ -53,3 +53,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] Missed trips: driving while Home Assistant was offline is logged from the odometer jump, with a **Fill in missed trips** action for past gaps; shown as *missed* on the card and in the CSV (0.30)
 - [x] Each release carries `mb_logbook.zip` for HACS, ready for the HACS default list (0.30.1)
 - [x] New icon: an open logbook with a charging bolt (0.30.2)
+- [x] Charge plug: each charge records AC or DC and when the cable went in and came out, from mbapi2020's Charge Coupler sensors (0.41+), found automatically; shown on the Charging tab and in the CSV (0.31)

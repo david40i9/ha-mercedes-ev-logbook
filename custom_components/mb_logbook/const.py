@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "mb_logbook"
-VERSION = "0.30.2"
+VERSION = "0.31.0"
 
 DB_FILENAME = "mb_logbook.db"
 STORAGE_VERSION = 1
@@ -28,6 +28,10 @@ CONF_DISTANCE_UNIT = "distance_unit"
 CONF_OUTSIDE_TEMP = "outside_temp_entity"
 CONF_CURRENCY = "currency"
 CONF_SUMMARY_NOTIFY = "summary_notify"
+# The charge plug sensors (mbapi2020 0.41+). Not on the setup form: found from the
+# odometer's mbapi2020 device, or set here for another source.
+CONF_PLUG_AC = "plug_ac_entity"
+CONF_PLUG_DC = "plug_dc_entity"
 
 DEFAULT_STOP_MINUTES = 3
 DEFAULT_MIN_DISTANCE_KM = 0.3
@@ -48,6 +52,16 @@ MB_KEYS = {
     CONF_CHARGING: ("binary_sensor", "chargingactive"),
     CONF_CHARGE_POWER: ("sensor", "chargingpowerkw"),
 }
+
+# Plug sensors: config key -> (connector, mbapi2020 unique_id suffix)
+PLUG_KEYS = {
+    CONF_PLUG_AC: ("AC", "chargecoupleracstatus"),
+    CONF_PLUG_DC: ("DC", "chargecouplerdcstatus"),
+}
+# Charge Coupler AC/DC Status: 0 plugged both sides, 1 plugged car side only,
+# 2 not plugged, 3/4 unknown. Only a cable connected at both ends counts as plugged in.
+PLUG_IN = "0"
+PLUG_OUT = {"1", "2"}
 
 # Ignition codes reported by mbapi2020 that mean "off"
 IGNITION_OFF = {"0"}

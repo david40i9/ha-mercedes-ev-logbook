@@ -109,6 +109,7 @@ Check your model year's spec sheet; capacities changed between versions. Choose 
 | Charging active, charging power | Optional | Charging sessions, peak power, and home kWh when there is no charger meter |
 | Electricity price sensor | Optional | Live price for home charges (per kWh or MWh, pounds, pence, euros, cents, öre…; converted automatically). Without one, home charges use the rates you set in the Charging tab |
 | Home charger energy meter | Optional | The most accurate home energy, losses included (any total-kWh sensor: Zappi, Wallbox, Ohme, smart plug, CT clamp…). Without one, home kWh comes from the car's charging power over the session, else its battery % |
+| Charge Coupler AC/DC Status | Automatic | AC or DC, and when the cable was plugged in and taken out, for each charge. Found by itself on mbapi2020 0.41 or later, for cars that report it |
 | Outside temperature | Optional | Defaults to Home Assistant's weather for your home; or pick any temperature sensor |
 
 Any car that provides these entities works, not only Mercedes. Pick them yourself in the setup form.

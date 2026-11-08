@@ -310,3 +310,71 @@ async def test_resuming_after_a_pause_counts_power_even_if_the_reading_never_cha
     await advance(minutes=11)
     [c] = await charges(ha, car)
     assert c["kwh_power"] == pytest.approx(7, abs=0.01)
+
+
+PLUG_CONF = {**BASE_CONF, "plug_ac_entity": "sensor.car_plug_ac", "plug_dc_entity": "sensor.car_plug_dc"}
+
+
+async def test_the_plug_sensors_give_the_connector_and_plugged_times(ha, advance):
+    set_car(ha, plug_ac="2", plug_dc="2")
+    entry = await add_car(ha, PLUG_CONF)
+    set_car(ha, plug_ac="0")  # cable in at 18:00
+    await advance(hours=1)
+    set_car(ha, charging="on", power=7)  # off-peak charging starts later
+    await advance(hours=2)
+    set_car(ha, charging="off", power=0, soc=95)
+    await advance(minutes=11)
+    [c] = await charges(ha, entry)
+    assert c["connector"] == "AC"
+    assert c["start_ts"] - c["plugged_ts"] == pytest.approx(3600, abs=5)
+    assert c["unplugged_ts"] is None
+    await advance(hours=1)
+    set_car(ha, plug_ac="1")  # taken out of the wallbox the next morning
+    await advance(minutes=1)
+    [c] = await charges(ha, entry)
+    assert c["unplugged_ts"] - c["end_ts"] == pytest.approx(3600 + 11 * 60, abs=10)
+
+
+async def test_a_rapid_charge_unplugged_before_it_closes_is_dc(ha, advance):
+    set_car(ha, plug_ac="2", plug_dc="2")
+    entry = await add_car(ha, PLUG_CONF)
+    set_car(ha, charging="on", power=90)  # the car reports charging before the plug
+    await ha.async_block_till_done()
+    set_car(ha, plug_dc="0")
+    await advance(minutes=25)
+    set_car(ha, charging="off", power=0, soc=80)
+    await advance(minutes=2)
+    set_car(ha, plug_dc="2")
+    await advance(minutes=11)
+    [c] = await charges(ha, entry)
+    assert c["connector"] == "DC"
+    assert c["plugged_ts"] == pytest.approx(c["start_ts"], abs=1)
+    assert c["unplugged_ts"] - c["end_ts"] == pytest.approx(120, abs=5)
+
+
+async def test_without_plug_sensors_charges_have_no_connector(ha, car, advance):
+    set_car(ha, charging="on", power=7)
+    await advance(hours=1)
+    set_car(ha, charging="off", power=0, soc=90)
+    await advance(minutes=11)
+    [c] = await charges(ha, car)
+    assert (c["connector"], c["plugged_ts"], c["unplugged_ts"]) == (None, None, None)
+
+
+async def test_the_plug_sensors_are_found_on_the_mbapi2020_car(ha, advance):
+    """No setting needed: the coupler sensors sit next to the odometer in mbapi2020."""
+    from homeassistant.helpers import entity_registry as er
+
+    reg = er.async_get(ha)
+    odo = reg.async_get_or_create("sensor", "mbapi2020", "wdd123_odometer").entity_id
+    plug = reg.async_get_or_create("sensor", "mbapi2020", "wdd123_chargecouplerdcstatus").entity_id
+    ha.states.async_set(odo, "1000", {"unit_of_measurement": "km"})
+    ha.states.async_set(plug, "0")
+    entry = await add_car(ha, {**BASE_CONF, "odometer_entity": odo})
+    set_car(ha, charging="on", power=50)
+    await advance(minutes=30)
+    set_car(ha, charging="off", power=0, soc=90)
+    await advance(minutes=11)
+    [c] = await charges(ha, entry)
+    assert c["connector"] == "DC"
+    assert c["plugged_ts"] is None  # plugged in before the logbook started: time unknown
