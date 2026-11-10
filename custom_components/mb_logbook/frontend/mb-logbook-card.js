@@ -770,7 +770,7 @@ class MBLogbookCard extends HTMLElement {
   _exportChargesCsv() {
     const loc = this._hass.locale?.language;
     const cur = this._cur;
-    const rows = [["Date", "Start time", "End time", "Place", "Latitude", "Longitude", "Battery start %", "Battery end %", "Energy (kWh)", "Energy source", "Peak power (kW)", `Cost (${cur})`, "Cost basis", `Per kWh (${cur})`]];
+    const rows = [["Date", "Start time", "End time", "Place", "Latitude", "Longitude", "Battery start %", "Battery end %", "Energy (kWh)", "Energy source", "Peak power (kW)", `Cost (${cur})`, "Cost basis", `Per kWh (${cur})`, "Connector", "Plugged in", "Unplugged"]];
     for (const c of [...this._shownCharges].sort((a, b) => a.start_ts - b.start_ts)) {
       const s = new Date(c.start_ts * 1000);
       const e = new Date(c.end_ts * 1000);
@@ -791,6 +791,9 @@ class MBLogbookCard extends HTMLElement {
         c.cost != null ? c.cost.toFixed(2) : "",
         { meter: "metered", power: "live price", rate: "place rate", free: "free" }[c.cost_source] || "",
         per != null ? per.toFixed(3) : "",
+        c.connector || "",
+        c.plugged_ts ? new Date(c.plugged_ts * 1000).toLocaleString(loc) : "",
+        c.unplugged_ts ? new Date(c.unplugged_ts * 1000).toLocaleString(loc) : "",
       ]);
     }
     this._download(rows, "charges");
@@ -901,6 +904,14 @@ class MBLogbookCard extends HTMLElement {
       .join("");
   }
 
+  /** When the cable went in and came out, from the car's plug sensors. */
+  _plugged(c) {
+    if (!c.plugged_ts && !c.unplugged_ts) return "";
+    const t = (ts) => (ts ? this._time(ts) : "?");
+    const text = c.unplugged_ts ? `plugged ${t(c.plugged_ts)}–${t(c.unplugged_ts)}` : `plugged in ${t(c.plugged_ts)}`;
+    return `<div class=dim title="When the cable was connected at both ends, and when it came out">${text}</div>`;
+  }
+
   _chargeRows() {
     const shown = this._shownCharges;
     if (!shown.length) return `<tr><td colspan=7 class=empty>No charging sessions${this._filtering ? " matching the filters" : ""} in this period.</td></tr>`;
@@ -921,11 +932,11 @@ class MBLogbookCard extends HTMLElement {
           ? `<tr class=maprow><td colspan=7>${this._nameForm(c.lat, c.lon)}<div id=mapbox class=small></div></td></tr>`
           : "";
         return `<tr>
-          <td>${this._when(c.start_ts)}<div class=dim>${this._dur(c.end_ts - c.start_ts)}</div></td>
+          <td>${this._when(c.start_ts)}<div class=dim>${this._dur(c.end_ts - c.start_ts)}</div>${this._plugged(c)}</td>
           <td>${this._place(c.place, c.lat, "charge", c.id, undefined, c.lon)}${c.at_home ? " <span class=chip>home</span>" : ""}</td>
           <td class=n>${c.soc_start ?? "–"}→${c.soc_end ?? "–"}%</td>
           <td class=n>${kwh != null ? kwh.toFixed(1) + " kWh" : "–"}<div class=dim>${src}</div></td>
-          <td class=n>${c.max_power_kw ? c.max_power_kw.toFixed(1) + " kW" : "–"}</td>
+          <td class=n>${c.max_power_kw ? c.max_power_kw.toFixed(1) + " kW" : "–"}${c.connector ? `<div class=dim>${esc(c.connector)}</div>` : ""}</td>
           <td class=n>${this._money(c.cost)}<div class=dim>${{ meter: "metered", power: "live price", rate: "place rate", free: "free" }[c.cost_source] || (c.cost == null ? "no rate" : "")}</div></td>
           <td class=n>${c.cost_source === "rate" || c.cost_source === "free" ? this._money(c.rate, true) : c.kwh && c.cost ? this._money(c.cost / c.kwh, true) : ""}</td>
         </tr>${formRow}`;
@@ -1418,7 +1429,7 @@ MBLogbookCard.css = `
   #mapbox ha-map { height: 100%; display: block; }
 `;
 
-const CARD_VERSION = "0.30.2";
+const CARD_VERSION = "0.31.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

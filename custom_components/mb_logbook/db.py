@@ -113,6 +113,10 @@ MIGRATIONS = (
     ("charges", "kwh_power", "REAL"),
     # 1 = a missed trip, filled in from an odometer jump while HA wasn't watching
     ("trips", "gap", "INTEGER"),
+    # From the car's plug sensors: "AC" or "DC", and when the cable went in and out
+    ("charges", "connector", "TEXT"),
+    ("charges", "plugged_ts", "REAL"),
+    ("charges", "unplugged_ts", "REAL"),
 )
 
 TRIP_COLS = (
@@ -124,6 +128,7 @@ TRIP_COLS = (
 CHARGE_COLS = (
     "car", "start_ts", "end_ts", "soc_start", "soc_end", "kwh_car", "kwh_meter", "kwh_power",
     "cost", "max_power_kw", "place", "at_home", "lat", "lon", "cost_basis",
+    "connector", "plugged_ts", "unplugged_ts",
 )
 # Trip lists only need how many route points a trip has, not the points themselves.
 _TRIP_LIST_COLS = ", ".join(
@@ -677,6 +682,18 @@ class LogbookDB:
 
     def add_charge(self, charge: dict[str, Any]) -> int:
         return self._insert("charges", CHARGE_COLS, _charge_row(charge))
+
+    def set_unplugged(self, car: str, since: float, ts: float) -> int:
+        """The cable came out at ts: stamp the charges made since it went in."""
+        with self._lock:
+            assert self._conn is not None
+            cur = self._conn.execute(
+                "UPDATE charges SET unplugged_ts = ? WHERE car = ? AND unplugged_ts IS NULL "
+                "AND connector IS NOT NULL AND end_ts >= ? AND start_ts <= ?",
+                (ts, car, since, ts),
+            )
+            self._conn.commit()
+            return cur.rowcount
 
     def charges(
         self, car: str, start_ts: float, end_ts: float, limit: int = 2000

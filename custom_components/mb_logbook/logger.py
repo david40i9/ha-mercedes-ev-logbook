@@ -12,6 +12,9 @@ battery % lost is the idle drain.
 Charging: follows the car's "charging active" sensor. If a charger energy
 meter is configured and the car is in the home zone, the meter's increase
 (and its cost at the live price) is credited to this car's session.
+
+Plug: if the car has mbapi2020's Charge Coupler AC/DC Status sensors, each charge
+also records AC or DC and when the cable was plugged in and taken out.
 """
 
 from __future__ import annotations
@@ -24,6 +27,7 @@ from typing import Any
 from homeassistant.components.zone import async_active_zone
 from homeassistant.const import ATTR_LATITUDE, ATTR_LONGITUDE
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.storage import Store
@@ -50,6 +54,9 @@ from .const import (
     DOMAIN,
     IGNITION_OFF,
     KM_PER_MI,
+    PLUG_IN,
+    PLUG_KEYS,
+    PLUG_OUT,
     SIGNAL_UPDATED,
     STORAGE_VERSION,
     UNKNOWN_STATES,
@@ -134,6 +141,7 @@ class CarLogger:
         self._end_timer = None
         self._stale_timer = None
         self._charge_end_timer = None
+        self._plugs: dict[str, str] = {}  # plug sensor entity_id -> "AC" / "DC"
 
     # ----- public state used by entities -------------------------------------------
 
@@ -184,6 +192,8 @@ class CarLogger:
             watched.append(self.conf[CONF_CHARGING])
         if self.conf.get(CONF_TRIP_DISTANCE):
             watched.append(self.conf[CONF_TRIP_DISTANCE])
+        self._plugs = self._find_plugs()
+        watched.extend(self._plugs)
         self._unsubs.append(
             async_track_state_change_event(self.hass, watched, self._on_change)
         )
@@ -266,6 +276,8 @@ class CarLogger:
                     charge["off_ts"] = max(charge.get("last_ts") or 0, last[0] if last else 0) or charge["start_ts"]
                     rules.add_power_sample(charge, charge["off_ts"], 0.0, None)
                 self._schedule_charge_end(0)
+        for entity_id, kind in self._plugs.items():
+            self._on_plug(entity_id, kind, self.hass.states.get(entity_id), resync=True)
         if "park" not in self._state:
             self._state["park"] = self._park_snapshot()
         self._save()
@@ -344,6 +356,8 @@ class CarLogger:
             self._on_position()
         elif entity_id == self.conf.get(CONF_CHARGING):
             self._on_charging(new)
+        elif entity_id in self._plugs:
+            self._on_plug(entity_id, self._plugs[entity_id], new)
         elif entity_id == self.conf.get(CONF_TRIP_DISTANCE):
             if (_num(new) or 0) > (_num(old) or 0):
                 self._on_movement() if moving_mode else self._on_drive()
@@ -627,6 +641,9 @@ class CarLogger:
             "priced_kwh": 0.0,
             "max_power_kw": 0.0,
         }
+        if plug := self._state.get("plug"):
+            self._state["charge"]["connector"] = plug["kind"]
+            self._state["charge"]["plugged_ts"] = plug.get("ts")
         # Start the power integration with the current reading, if any.
         if self.conf.get(CONF_CHARGE_POWER):
             power = _num(self.hass.states.get(self.conf[CONF_CHARGE_POWER]))
@@ -690,12 +707,65 @@ class CarLogger:
             "at_home": charge.get("at_home"),
             "lat": charge.get("lat"),
             "lon": charge.get("lon"),
+            "connector": charge.get("connector"),
+            "plugged_ts": charge.get("plugged_ts"),
+            "unplugged_ts": charge.get("unplugged_ts"),
         }
         await self.hass.async_add_executor_job(self.db.add_charge, record)
         # Same park, now charged; drain is measured from the end of the charge.
         self._state["park"] = rules.after_charge(self._state.get("park"), record["end_ts"], soc_end)
         self._save()
         self._notify()
+
+    # ----- plug -------------------------------------------------------------------------
+
+    def _find_plugs(self) -> dict[str, str]:
+        """The car's Charge Coupler AC/DC Status sensors: set in the config, or the
+        mbapi2020 sensors on the same car as the odometer (mbapi2020 0.41+)."""
+        found: dict[str, str] = {}
+        reg = er.async_get(self.hass)
+        odo = reg.async_get(self.conf[CONF_ODOMETER])
+        vin = (
+            odo.unique_id.partition("_")[0]
+            if odo and odo.platform == "mbapi2020" and "_" in odo.unique_id
+            else None
+        )
+        for conf_key, (kind, suffix) in PLUG_KEYS.items():
+            entity_id = self.conf.get(conf_key) or (
+                vin and reg.async_get_entity_id("sensor", "mbapi2020", f"{vin}_{suffix}")
+            )
+            if entity_id:
+                found[entity_id] = kind
+        return found
+
+    @callback
+    def _on_plug(self, entity_id: str, kind: str, new: State | None, resync: bool = False) -> None:
+        """Cable in or out. After a restart (resync) the time it changed isn't known."""
+        state = None if new is None else str(new.state)
+        plug = self._state.get("plug")
+        charge = self._state.get("charge")
+        now = time.time()
+        if state == PLUG_IN and not plug:
+            plug = self._state["plug"] = {"kind": kind, "ts": None if resync else now, "seen": now}
+            if charge:
+                charge.setdefault("connector", kind)
+                if not resync:
+                    # The charge was seen first: the cable was in by the time it started.
+                    charge.setdefault("plugged_ts", min(now, charge["start_ts"]))
+            self._save()
+        elif state in PLUG_OUT and plug and plug["kind"] == kind:
+            self._state["plug"] = None
+            if not resync:
+                if charge:
+                    charge["unplugged_ts"] = now
+                else:
+                    since = plug.get("ts") or plug.get("seen") or now
+                    self.hass.async_create_task(self._async_unplugged(since, now))
+            self._save()
+
+    async def _async_unplugged(self, since: float, ts: float) -> None:
+        if await self.hass.async_add_executor_job(self.db.set_unplugged, self.car_id, since, ts):
+            self._notify()
 
     def _home_charge_power(self) -> float | None:
         """This car's charging power now, while it has a home charge running (else None)."""
