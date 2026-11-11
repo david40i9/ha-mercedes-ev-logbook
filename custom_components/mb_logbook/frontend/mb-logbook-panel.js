@@ -429,8 +429,8 @@ class MBLogbookPanel extends HTMLElement {
 
   /** Grouped bar chart in plain HTML. series: [{name?, values[], colour}] where colour is a
    * palette slot (1-8). opts.base: value at the bottom of the bars (0 normally).
-   * opts.allValues: a number on every bar; otherwise only the latest and the highest carry
-   * one and the rest show on hover, tap or keyboard focus. opts.note: a line under the chart. */
+   * Every bar carries its figure, the latest in bold (opts.allValues: all in bold); hover, tap
+   * or keyboard focus shows the full figures. opts.note: a line under the chart. */
   _chart(title, labels, series, fmt, { base = 0, allValues = false, note = "" } = {}) {
     const n = labels.length;
     const all = series.flatMap((s) => s.values);
@@ -446,19 +446,27 @@ class MBLogbookPanel extends HTMLElement {
     let grid = "";
     for (let v = base; v <= top + step / 2; v += step) grid += `<div class=gl style="bottom:${pct(v) || 0}%"><span>${v === 0 ? "0" : tick(v)}</span></div>`;
     const single = series.length === 1;
-    const peak = single ? series[0].values.indexOf(Math.max(...series[0].values)) : -1;
+    // The figure on a bar. On a narrow screen a long one loses its decimals ("420.6"
+    // becomes "421") so twelve fit side by side; the css picks which of the two shows.
+    const short = (v) => {
+      const t = fmt(v);
+      return t.length > 4 && /\.\d+$/.test(t) ? `<span class=wide>${t}</span><span class=narrow>${Math.round(v)}</span>` : t;
+    };
     const cols = labels
       .map((l, i) => {
         const name = String(l).split("\n")[0];
+        const cls = `val${i === n - 1 || allValues ? " now" : ""}`;
+        // One series: the figure sits on its bar. Two: both figures sit above the pair, in legend order.
         const bars = series
           .map((s) => {
             const v = s.values[i];
-            const shown = v && (allValues || (single && (i === n - 1 || i === peak)));
-            return `<div class=bar style="height:${pct(v).toFixed(2)}%;background:var(--mbl-c${s.colour})">${shown ? `<span class="val${i === n - 1 || allValues ? " now" : ""}">${fmt(v)}</span>` : ""}</div>`;
+            return `<div class=bar style="height:${pct(v).toFixed(2)}%;background:var(--mbl-c${s.colour})">${single && v ? `<span class="${cls}">${short(v)}</span>` : ""}</div>`;
           })
           .join("");
+        const vs = series.map((s) => s.values[i]);
+        const pair = !single && vs.some(Boolean) ? `<span class="${cls} pair" style="bottom:${pct(Math.max(...vs)).toFixed(2)}%">${vs.map((v) => (v ? short(v) : "–")).join("<br>")}</span>` : "";
         const tip = series.map((s) => `<div>${single ? "" : `<i style="background:var(--mbl-c${s.colour})"></i>${s.name} `}<b>${fmt(s.values[i]) || "–"}</b></div>`).join("");
-        return `<div class=col tabindex=0><div class=bars>${bars}</div><div class=tip><span>${name}</span>${tip}</div></div>`;
+        return `<div class=col tabindex=0><div class=bars>${bars}${pair}</div><div class=tip><span>${name}</span>${tip}</div></div>`;
       })
       .join("");
     // A label may have a second line ("5–10°\n9 trips").
@@ -469,7 +477,7 @@ class MBLogbookPanel extends HTMLElement {
       })
       .join("");
     const legend = single ? "" : `<div class=legend>${series.map((s) => `<span><i style="background:var(--mbl-c${s.colour})"></i>${s.name}</span>`).join("")}</div>`;
-    return `<div class="section chart"><h2>${title}</h2>${legend}<div class=plot><div class=grid>${grid}</div><div class=cols>${cols}</div></div><div class=xl>${xl}</div>${note ? `<div class="dim note">${note}</div>` : ""}</div>`;
+    return `<div class="section chart"><h2>${title}</h2>${legend}<div class="plot${single ? "" : " multi"}"><div class=grid>${grid}</div><div class=cols>${cols}</div></div><div class=xl>${xl}</div>${note ? `<div class="dim note">${note}</div>` : ""}</div>`;
   }
 
   /** "Where you go": a heat map of every trip's end point for a chosen period. */
@@ -723,17 +731,20 @@ MBLogbookPanel.css = `
   @media (max-width: 900px) { .grid, .grid2 { grid-template-columns: 1fr; } }
 
   /* Charts: gridlines behind, one column per period, a pop-up with the figures on hover */
-  .chart .plot { position: relative; height: 170px; margin-left: 38px; padding-top: 18px; box-sizing: border-box; }
-  .chart .grid { position: absolute; inset: 18px 0 0 0; display: block; pointer-events: none; }
+  .chart .plot { --pt: 18px; position: relative; height: 170px; margin-left: 38px; padding-top: var(--pt); box-sizing: border-box; }
+  .chart .plot.multi { --pt: 30px; height: 182px; }
+  .chart .grid { position: absolute; inset: var(--pt) 0 0 0; display: block; pointer-events: none; }
   .chart .gl { position: absolute; left: 0; right: 0; border-top: 1px solid color-mix(in srgb, var(--mbl-line) 60%, transparent); }
   .chart .gl:first-child { border-top-color: var(--mbl-line); }
   .chart .gl span { position: absolute; right: 100%; top: 0; transform: translateY(-50%); margin-right: 8px; font-size: 11px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .chart .cols { position: relative; display: flex; height: 100%; }
   .chart .col { position: relative; flex: 1; min-width: 0; display: flex; justify-content: center; border-radius: 4px 4px 0 0; outline-offset: -2px; }
   .chart .col:hover, .chart .col:focus { background: color-mix(in srgb, var(--primary-text-color) 6%, transparent); }
-  .chart .bars { display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 72%; max-width: 96px; height: 100%; }
+  .chart .bars { position: relative; display: flex; align-items: flex-end; justify-content: center; gap: 2px; width: 72%; max-width: 96px; height: 100%; }
   .chart .bar { position: relative; flex: 1; min-width: 2px; max-width: 44px; border-radius: 4px 4px 0 0; }
   .chart .val { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); margin-bottom: 3px; font-size: 11px; font-weight: 500; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chart .narrow { display: none; }
+  .chart .val.pair { line-height: 1.15; text-align: center; }
   .chart .val.now { font-size: 12px; font-weight: 600; color: var(--primary-text-color); }
   .chart .tip { display: none; position: absolute; z-index: 2; top: -10px; left: 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: var(--mbl-r);
     background: var(--card-background-color); border: 1px solid var(--mbl-line); box-shadow: 0 4px 14px rgba(0, 0, 0, .25); font-size: 12px; line-height: 1.5; white-space: nowrap; pointer-events: none; font-variant-numeric: tabular-nums; }
@@ -746,7 +757,7 @@ MBLogbookPanel.css = `
   .chart .xl span { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--secondary-text-color); line-height: 1.3; overflow: hidden; }
   .chart .xl small { display: block; font-size: 11px; opacity: .85; }
   .chart .note { margin-top: 10px; }
-  @media (max-width: 600px) { .chart .xl span { font-size: 10px; } .chart .plot, .chart .xl { margin-left: 32px; } }
+  @media (max-width: 600px) { .chart .wide { display: none; } .chart .narrow { display: inline; } .chart .xl span, .chart .val, .chart .val.now { font-size: 10px; } .chart .plot, .chart .xl { margin-left: 32px; } }
   .legend { display: flex; gap: 14px; font-size: .8em; color: var(--secondary-text-color); margin: -6px 0 8px; }
   #mapbox { height: 380px; border-radius: var(--mbl-r-box); overflow: hidden; }
   #heatbox { height: 460px; border-radius: var(--mbl-r-box); overflow: hidden; }
