@@ -204,7 +204,7 @@ class MBLogbookCard extends HTMLElement {
       ...zones.map((r) => ({ name: r.location, radius: null, uses: r.visits, ...this._labelInfo(info, r.location) })),
     ];
     if (!rows.length)
-      return `<tr><td colspan=5 class=empty>No named places yet. Click “unnamed · name it” on a trip or charge to add one.</td></tr>`;
+      return `<tr class=plain><td colspan=5 class=empty>No named places yet. Click “unnamed · name it” on a trip or charge to add one.</td></tr>`;
     const labels = [...new Set([...(this._labels || []), ...rows.map((r) => r.label).filter(Boolean)])];
     const labelCell = (r) =>
       admin
@@ -217,18 +217,35 @@ class MBLogbookCard extends HTMLElement {
         const home = r.is_home ? " <span class=chip>home</span>" : "";
         const p = r.place;
         if (!p)
-          return `<tr><td>${esc(r.name)}${home}</td><td>${labelCell(r)}</td><td class=dim>HA zone</td><td class=n>${r.uses}</td><td></td></tr>`;
+          return `<tr class=place><td class=c-route>${esc(r.name)}${home}</td><td class=c-label>${labelCell(r)}</td><td class="dim c-x">HA zone</td><td class="n c-x">${r.uses}</td><td class=c-x></td>
+            <td class=c-meta>Home Assistant zone · ${r.uses} trip end${r.uses === 1 ? "" : "s"} and charges</td></tr>`;
         const opts = [...new Set([...radii, Math.round(p.radius_m)])]
           .sort((a, b) => a - b)
           .map((x) => `<option value="${x}" ${x === Math.round(p.radius_m) ? "selected" : ""}>${x < 1000 ? x + " m" : x / 1000 + " km"}</option>`)
           .join("");
-        return `<tr data-place="${p.id}">
-          <td>${admin ? `<input class=pn value="${esc(p.name)}" maxlength=60>` : esc(p.name)}${home}</td>
-          <td>${labelCell(r)}</td>
-          <td>${admin ? `<select class=pr>${opts}</select>` : Math.round(p.radius_m) + " m"}</td>
-          <td class=n>${p.uses}</td>
-          <td class="n acts"><button class="btn pmap">${this._openPlace === p.id ? "Hide map" : "Map"}</button>${admin ? `<button class="btn psv">Save</button><button class="btn danger pdel">Delete</button>` : ""}</td>
-        </tr>${this._openPlace === p.id ? `<tr class=maprow><td colspan=5><div class="dim">Drag the pin to move this place or the circle's edge to resize it, then press Save.</div><div id=mapbox class=small></div></td></tr>` : ""}`;
+        const editing = this._openPlace === p.id;
+        const size = (m) => (m < 1000 ? `${Math.round(m)} m` : `${+(m / 1000).toFixed(1)} km`);
+        // Read first: the row shows the place; Edit opens its name, size and map together.
+        const editor = !editing
+          ? ""
+          : `<tr class=maprow data-edit="${p.id}"><td colspan=5>
+              ${admin ? `<div class=pform>
+                <label class=wide><span>Name</span><input class=pn value="${esc(p.name)}" maxlength=60></label>
+                <label><span>Radius</span><select class=pr>${opts}</select></label>
+                <button class="btn primary psv">Save</button>
+                <button class="btn pcancel">Cancel</button>
+                <button class="btn danger pdel">Delete</button>
+              </div>
+              <div class=dim>Drag the pin to move this place or the circle's edge to resize it, then press Save.</div>` : ""}
+              <div id=mapbox class=small></div></td></tr>`;
+        return `<tr class="place${editing ? " open" : ""}" data-place="${p.id}">
+          <td class=c-route>${esc(p.name)}${home}</td>
+          <td class=c-label>${labelCell(r)}</td>
+          <td class=c-x>${size(p.radius_m)}</td>
+          <td class="n c-x">${p.uses}</td>
+          <td class="n acts c-dist"><button class="btn sm pmap">${editing ? "Close" : admin ? "Edit" : "Map"}</button></td>
+          <td class=c-meta>${size(p.radius_m)} · ${p.uses} trip end${p.uses === 1 ? "" : "s"} and charges</td>
+        </tr>${editor}`;
       })
       .join("");
   }
@@ -250,22 +267,24 @@ class MBLogbookCard extends HTMLElement {
     const rows = list
       .map((u, i) => {
         const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
-        return `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
-            <td class="n acts">${admin ? `<button class="btn sm nameit" data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class="btn sm quiet ignore" data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td></tr>
+        return `<tr class=unnamed><td class=c-route>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
+            <td class="n acts c-dist">${admin ? `<button class="btn sm ${naming ? "" : "primary "}nameit" data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class="btn sm quiet ignore" data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td>
+            <td class=c-meta>${u.visits} stop${u.visits === 1 ? "" : "s"} · last ${this._date(u.last_ts)}</td></tr>
           ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
     const needs = list.length
       ? `<h3 class=sub>Needs a name <span class=badge>${total}</span></h3>
       <div class=dim>Places the car stopped in the last 12 months that have no name yet, most visited first${total > list.length ? ` (top ${list.length} shown)` : ""}. Ignore one that doesn't need a name.</div>
-      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      <table class=cards><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
       : "";
     const ign = ignored.length
       ? `<details class=ignored${this._showIgnored ? " open" : ""}><summary>Ignored places (${ignored.length})</summary>
-      <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
+      <table class=cards><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
         .map(
-          (u) => `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
-            <td class=n>${admin ? `<button class="btn sm nameit" data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td></tr>`
+          (u) => `<tr class=unnamed><td class=c-route>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
+            <td class="n acts c-dist">${admin ? `<button class="btn sm nameit" data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td>
+            <td class=c-meta>${u.visits} stop${u.visits === 1 ? "" : "s"} · last ${this._date(u.last_ts)}</td></tr>`
         )
         .join("")}</tbody></table></details>`
       : "";
@@ -351,24 +370,24 @@ class MBLogbookCard extends HTMLElement {
               .join("")
           : `<div class=dim>No rates yet. Charges here have no cost${loc.metered && this._car?.has_price ? " unless metered" : ""}.</div>`;
         const form = admin
-          ? `<div class=nameform>
-               <span>New rate from</span><input type=date class=rdate value="${today}">
-               <input type=number class=rrate min=0 max=10000 step=any placeholder="${esc(this._cur)} per kWh, e.g. 0.79">
-               <label class=dim><input type=checkbox class=rfree> Free</label>
-               <span class=offpeak><span>Off-peak (optional)</span>
-                 <input type=number class=roff min=0 max=10000 step=any placeholder="per kWh, e.g. 0.07">
-                 <span>from</span><input type=time class=roffs value="00:30"><span>to</span><input type=time class=roffe value="05:30"></span>
+          ? `<div class=rform>
+               <label><span>New rate from</span><input type=date class=rdate value="${today}"></label>
+               <label><span>Price per kWh (${esc(this._cur)})</span><input type=number class=rrate min=0 max=10000 step=any placeholder="e.g. 0.79"></label>
+               <label class=check><input type=checkbox class=rfree> Free to charge here</label>
+               <label><span>Off-peak price (optional)</span><input type=number class=roff min=0 max=10000 step=any placeholder="e.g. 0.07"></label>
+               <label><span>Off-peak from</span><input type=time class=roffs value="00:30"></label>
+               <label><span>Off-peak to</span><input type=time class=roffe value="05:30"></label>
                <button class="btn primary rsave" data-loc="${i}">Add rate</button>
-               <div class=dim>Charges from that date on use the new rate; earlier charges keep the rate they had. With an off-peak price, each charge is costed by how much of it fell in that window every day.${this._car?.has_price ? " Home charges use your live price sensor instead." : ""}</div>
-             </div>`
+             </div>
+             <div class="dim rnote">Charges from that date on use the new rate; earlier charges keep the rate they had. With an off-peak price, each charge is costed by how much of it fell in that window every day.${this._car?.has_price ? " Home charges use your live price sensor instead." : ""}</div>`
           : "";
-        return `<tr><td>${esc(loc.location)}</td><td>${cur}</td><td class=n>${loc.charges}</td>
-            <td class="n acts"><button class="btn pmap" data-rates="${i}">${open ? "Hide" : "Rates"}</button></td></tr>
+        return `<tr class="rate${open ? " open" : ""}"><td class=c-route>${esc(loc.location)}</td><td class=c-meta2>${cur}</td><td class="n c-x">${loc.charges}</td>
+            <td class="n acts c-dist"><button class="btn sm pmap" data-rates="${i}">${open ? "Close" : "Rates"}</button></td></tr>
           ${open ? `<tr class=maprow><td colspan=4>${histRows}${form}</td></tr>` : ""}`;
       })
       .join("");
     return `<h3 class=sub>Charging rates</h3>
-      <table><thead><tr><th>Where</th><th>Current rate</th><th class=n>Charges</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table class=cards><thead><tr><th>Where</th><th>Current rate</th><th class=n>Charges</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   /** [[south, west], [north, east]] around a set of [lat, lon] points. */
@@ -480,7 +499,7 @@ class MBLogbookCard extends HTMLElement {
   _syncRadius() {
     const sel =
       this.shadowRoot.getElementById("pradius") ||
-      this.shadowRoot.querySelector(`tr[data-place="${this._openPlace}"] .pr`);
+      this.shadowRoot.querySelector("tr[data-edit] .pr");
     if (!sel) return;
     const r = this._edit.radius;
     if (![...sel.options].some((o) => Number(o.value) === r)) {
@@ -510,12 +529,43 @@ class MBLogbookCard extends HTMLElement {
     this._drawMap({ edit: true });
   }
 
+  /** A short message in Home Assistant's own toast at the bottom of the screen. */
+  _toast(message) {
+    this.dispatchEvent(new CustomEvent("hass-notification", { detail: { message }, bubbles: true, composed: true }));
+  }
+
+  /**
+   * A question in the card's own style, in place of the browser's confirm and prompt.
+   * Resolves true or false; with `input` (a placeholder) it resolves the text typed, or null.
+   */
+  _ask({ title, text = "", ok = "OK", danger = false, input = null }) {
+    return new Promise((resolve) => {
+      const d = document.createElement("dialog");
+      d.className = "ask";
+      d.innerHTML = `<form method=dialog>
+          <h3>${esc(title)}</h3>
+          ${text ? `<p>${esc(text)}</p>` : ""}
+          ${input != null ? `<input maxlength=30 placeholder="${esc(input)}" autocomplete=off>` : ""}
+          <div class=askbtns><button class=btn value=cancel type=submit formnovalidate>Cancel</button><button class="btn ${danger ? "danger solid" : "primary"}" value=ok type=submit>${esc(ok)}</button></div>
+        </form>`;
+      const field = d.querySelector("input");
+      d.addEventListener("close", () => {
+        const yes = d.returnValue === "ok";
+        d.remove();
+        resolve(input != null ? (yes ? field.value.trim() : null) : yes);
+      });
+      this.shadowRoot.appendChild(d);
+      d.showModal();
+      (field || d.querySelector("button[value=ok]")).focus();
+    });
+  }
+
   async _savePlace(body) {
     try {
       await this._hass.callWS({ type: "mb_logbook/place_save", ...body });
       await this._load();
     } catch (e) {
-      alert(`Couldn't save the place: ${e.message || e.code || e}`);
+      this._toast(`Couldn't save the place: ${e.message || e.code || e}`);
     }
   }
 
@@ -1071,7 +1121,7 @@ class MBLogbookCard extends HTMLElement {
         : this._tab === "charges"
           ? `${this._charges.length ? `<div class=labelbar><div class=tools>${fu.chips}${clear}${fu.btn}<button class="btn csv csvc" title="Download the charging sessions shown">${icon("download")}Export CSV</button></div></div>${fu.panel}` : ""}<table class=cards><thead><tr>${heads}</tr></thead><tbody>${this._chargeRows()}</tbody></table>
              ${this._rateSection()}`
-          : `${this._unnamedSection()}<table><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
+          : `${this._unnamedSection()}<table class=cards><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
              <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.
              Trips with no label of their own take the default of where they end, or else where they start (so Home → Work and Work → Home both count). Labels you pick on a trip always win.</div>`;
     root.innerHTML = `<style>${MBLogbookCard.css}</style>
@@ -1139,18 +1189,18 @@ class MBLogbookCard extends HTMLElement {
         const row = this._labelInfo(new Map((this._placeLabels || []).map((r) => [r.location, r])), loc);
         let label = s.value;
         if (label === "__other") {
-          label = (prompt(`Default label for trips to and from ${loc}:`) || "").trim().slice(0, 30);
+          label = ((await this._ask({ title: "New label", text: `Default label for trips to and from ${loc}.`, ok: "Use it", input: "e.g. Client visit" })) || "").slice(0, 30);
           if (!label) return this._render();
         }
         // Nearly every trip starts or ends at home, so check before labelling them all.
         if (label && row.is_home &&
-            !confirm(`${loc} is your home zone: ${row.visits} trips start or end there, so a default here would label almost all of them "${label}". Trips with their own label keep it.\n\nGive ${loc} this default anyway?`)) {
+            !(await this._ask({ title: `Give ${loc} this default?`, text: `${loc} is your home zone: ${row.visits} trips start or end there, so a default here would label almost all of them "${label}". Trips with their own label keep it.`, ok: "Give it the default" }))) {
           return this._render();
         }
         try {
           await this._hass.callWS({ type: "mb_logbook/place_label_set", location: loc, label: label || null });
         } catch (e) {
-          alert(`Couldn't save the default label: ${e.message || e.code || e}`);
+          this._toast(`Couldn't save the default label: ${e.message || e.code || e}`);
         }
         await this._load();
       })
@@ -1169,19 +1219,19 @@ class MBLogbookCard extends HTMLElement {
         const free = row.querySelector(".rfree").checked;
         const rate = free ? 0 : Number(row.querySelector(".rrate").value);
         const date = row.querySelector(".rdate").value;
-        if (!date || (!free && !(rate > 0))) return alert("Enter a rate per kWh (or tick Free) and a start date.");
+        if (!date || (!free && !(rate > 0))) return this._toast("Enter a rate per kWh (or tick Free) and a start date.");
         const msg = { type: "mb_logbook/rate_save", location: loc, valid_from: date, rate };
         const offRate = row.querySelector(".roff").value;
         if (!free && offRate !== "") {
           const from = row.querySelector(".roffs").value;
           const to = row.querySelector(".roffe").value;
-          if (!from || !to || from === to) return alert("Give the off-peak window a start and end time (for example 00:30 to 05:30).");
+          if (!from || !to || from === to) return this._toast("Give the off-peak window a start and end time (for example 00:30 to 05:30).");
           Object.assign(msg, { offpeak_rate: Number(offRate), offpeak_start: from, offpeak_end: to });
         }
         try {
           await this._hass.callWS(msg);
         } catch (e) {
-          return alert(`Couldn't save the rate: ${e.message || e.code || e}`);
+          return this._toast(`Couldn't save the rate: ${e.message || e.code || e}`);
         }
         const keep = this._openRate;
         await this._load();
@@ -1191,7 +1241,7 @@ class MBLogbookCard extends HTMLElement {
     );
     root.querySelectorAll("button.ratedel").forEach((b) =>
       b.addEventListener("click", async () => {
-        if (!confirm("Delete this rate? Charges it covered will use the rate before it (or none).")) return;
+        if (!(await this._ask({ title: "Delete this rate?", text: "Charges it covered will use the rate before it (or none).", ok: "Delete", danger: true }))) return;
         await this._hass.callWS({ type: "mb_logbook/rate_delete", rate_id: Number(b.dataset.rate) });
         const keep = this._openRate;
         await this._load();
@@ -1250,13 +1300,13 @@ class MBLogbookCard extends HTMLElement {
         const id = Number(s.dataset.id);
         let label = s.value;
         if (label === "__other") {
-          label = (prompt("Label for this trip (e.g. Client visit):") || "").trim().slice(0, 30);
+          label = ((await this._ask({ title: "New label", text: "A label for this trip.", ok: "Use it", input: "e.g. Client visit" })) || "").slice(0, 30);
           if (!label) return this._render();
         }
         try {
           await this._hass.callWS({ type: "mb_logbook/trip_label", trip_id: id, label: label || null });
         } catch (e) {
-          alert(`Couldn't save the label: ${e.message || e.code || e}`);
+          this._toast(`Couldn't save the label: ${e.message || e.code || e}`);
           return this._render();
         }
         if (label && !this._labels.includes(label)) this._labels.push(label);
@@ -1270,11 +1320,11 @@ class MBLogbookCard extends HTMLElement {
     root.querySelectorAll("button.splittrip").forEach((b) =>
       b.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        if (!confirm("Split this trip in two at its longest stop? Use this when two drives were logged as one.")) return;
+        if (!(await this._ask({ title: "Split this trip in two?", text: "It is split at its longest stop. Use this when two drives were logged as one.", ok: "Split" }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/split_trip", trip_id: Number(b.dataset.id) });
         } catch (e) {
-          alert(`Couldn't split the trip: ${e.message || e.code || e}`);
+          this._toast(`Couldn't split the trip: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1287,11 +1337,11 @@ class MBLogbookCard extends HTMLElement {
         const t = this._trips.find((x) => x.id === id);
         const next = t && [...this._trips].filter((x) => x.start_ts > t.start_ts).sort((a, c) => a.start_ts - c.start_ts)[0];
         const what = next ? `the ${this._when(next.start_ts)} trip (${this._dist(next.distance_km)})` : "the next trip";
-        if (!confirm(`Join this trip with ${what} into one?`)) return;
+        if (!(await this._ask({ title: "Merge these trips?", text: `This trip is joined with ${what} into one.`, ok: "Merge" }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/merge_trips", trip_id: id });
         } catch (e) {
-          alert(`Couldn't merge: ${e.message || e.code || e}`);
+          this._toast(`Couldn't merge: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1302,11 +1352,11 @@ class MBLogbookCard extends HTMLElement {
         ev.stopPropagation();
         const t = this._trips.find((x) => x.id === Number(b.dataset.id));
         const what = t ? `${this._when(t.start_ts)}, ${this._dist(t.distance_km)}` : "this trip";
-        if (!confirm(`Delete the trip on ${what}? This can't be undone.`)) return;
+        if (!(await this._ask({ title: "Delete this trip?", text: `The trip on ${what}. This can't be undone.`, ok: "Delete", danger: true }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/delete_trip", trip_id: Number(b.dataset.id) });
         } catch (e) {
-          alert(`Couldn't delete the trip: ${e.message || e.code || e}`);
+          this._toast(`Couldn't delete the trip: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1320,7 +1370,7 @@ class MBLogbookCard extends HTMLElement {
         try {
           await this._hass.callWS({ type: "mb_logbook/place_ignore", lat: u.lat, lon: u.lon });
         } catch (e) {
-          alert(`Couldn't ignore the place: ${e.message || e.code || e}`);
+          this._toast(`Couldn't ignore the place: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1332,7 +1382,7 @@ class MBLogbookCard extends HTMLElement {
         try {
           await this._hass.callWS({ type: "mb_logbook/place_unignore", id: Number(b.dataset.unignore) });
         } catch (e) {
-          alert(`Couldn't restore the place: ${e.message || e.code || e}`);
+          this._toast(`Couldn't restore the place: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1379,7 +1429,7 @@ class MBLogbookCard extends HTMLElement {
         try {
           await this._hass.callWS({ type: "mb_logbook/place_ignore", lat: Number(save.dataset.lat), lon: Number(save.dataset.lon) });
         } catch (e) {
-          alert(`Couldn't ignore the place: ${e.message || e.code || e}`);
+          this._toast(`Couldn't ignore the place: ${e.message || e.code || e}`);
           return;
         }
         await this._load();
@@ -1392,29 +1442,38 @@ class MBLogbookCard extends HTMLElement {
     }
     root.querySelectorAll("tr[data-place]").forEach((tr) => {
       const p = this._places.find((x) => x.id === Number(tr.dataset.place));
-      tr.querySelector(".pmap").addEventListener("click", () => {
+      const toggle = () => {
         this._openPlace = this._openPlace === p.id ? null : p.id;
         this._render();
         if (this._openPlace != null) this._showPlaceMap(p);
-      });
-      tr.querySelector(".pr")?.addEventListener("change", (e) => {
-        if (this._openPlace === p.id) this._setEditRadius(Number(e.target.value));
-      });
-      tr.querySelector(".psv")?.addEventListener("click", () => {
-        const name = tr.querySelector(".pn").value.trim();
-        if (!name) return;
-        const e = this._openPlace === p.id ? this._edit : null; // moved/resized on the map
+      };
+      tr.querySelector(".pmap").addEventListener("click", toggle);
+      // The editor (name, radius, map) is the row below while this place is open.
+      const ed = root.querySelector(`tr[data-edit="${p.id}"]`);
+      if (!ed) return;
+      ed.querySelector(".pcancel")?.addEventListener("click", toggle);
+      ed.querySelector(".pr")?.addEventListener("change", (e) => this._setEditRadius(Number(e.target.value)));
+      const save = () => {
+        const name = ed.querySelector(".pn").value.trim();
+        if (!name) return ed.querySelector(".pn").focus();
+        const e = this._edit; // moved or resized on the map
         this._savePlace({
           place_id: p.id,
           name,
           lat: e ? e.lat : p.lat,
           lon: e ? e.lon : p.lon,
-          radius_m: e ? e.radius : Number(tr.querySelector(".pr").value),
+          radius_m: e ? e.radius : Number(ed.querySelector(".pr").value),
         });
-      });
-      tr.querySelector(".pdel")?.addEventListener("click", async () => {
-        if (!confirm(`Delete “${p.name}”? Trips there will show as unnamed again.`)) return;
-        await this._hass.callWS({ type: "mb_logbook/place_delete", place_id: p.id });
+      };
+      ed.querySelector(".psv")?.addEventListener("click", save);
+      ed.querySelector(".pn")?.addEventListener("keydown", (e) => e.key === "Enter" && save());
+      ed.querySelector(".pdel")?.addEventListener("click", async () => {
+        if (!(await this._ask({ title: `Delete “${p.name}”?`, text: "Trips there will show as unnamed again.", ok: "Delete", danger: true }))) return;
+        try {
+          await this._hass.callWS({ type: "mb_logbook/place_delete", place_id: p.id });
+        } catch (e) {
+          return this._toast(`Couldn't delete the place: ${e.message || e.code || e}`);
+        }
         await this._load();
       });
     });
@@ -1521,9 +1580,18 @@ MBLogbookCard.css = `
   .suggestions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 
   /* Fields */
-  .nameform input, td input.pn, .nameform select, td select.pr { height: var(--mbl-h); box-sizing: border-box; padding: 0 8px; border-radius: var(--mbl-r);
+  .nameform input, :is(.pform, .rform) :is(input, select), .nameform select, dialog.ask input { height: var(--mbl-h); box-sizing: border-box; padding: 0 8px; border-radius: var(--mbl-r);
     border: 1px solid var(--mbl-line); background: var(--card-background-color); color: var(--primary-text-color); }
-  .nameform input, td input.pn { flex: 1; min-width: 160px; }
+  .nameform input { flex: 1; min-width: 160px; }
+  /* Edit a place, and add a rate: labelled fields in a row that wraps */
+  .pform, .rform { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; padding: 6px 0 10px; }
+  :is(.pform, .rform) label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 150px; min-width: 0; font-size: .8em; color: var(--secondary-text-color); }
+  :is(.pform, .rform) label :is(input, select) { width: 100%; font-size: 1.15em; }
+  .pform label.wide { flex: 3 1 220px; }
+  .pform .pdel { margin-left: auto; }
+  .rform label.check { flex-direction: row; align-items: center; gap: 6px; height: var(--mbl-h); font-size: .9em; color: var(--primary-text-color); }
+  .rform label.check input { width: auto; height: auto; margin: 0; }
+  .rnote { padding-bottom: 8px; }
   .nameform input[type=checkbox] { flex: none; min-width: 0; width: auto; height: auto; margin: 0; }
   .fpanel { display: flex; flex-wrap: wrap; gap: 10px 14px; padding: 12px; margin: 0 0 12px; border-radius: var(--mbl-r-box); background: var(--secondary-background-color); }
   .fpanel label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 150px; min-width: 0; font-size: .8em; color: var(--secondary-text-color); }
@@ -1571,7 +1639,18 @@ MBLogbookCard.css = `
   th .ic { width: 14px; height: 14px; vertical-align: -2px; margin-left: 2px; }
   td { padding: 7px 6px; border-bottom: 1px solid var(--mbl-line); vertical-align: top; }
   .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  tr[data-place] td { vertical-align: middle; }
+  tr:is(.place, .unnamed, .rate) td { vertical-align: middle; }
+  tr:is(.place, .rate).open { background: color-mix(in srgb, var(--secondary-background-color) 60%, transparent); }
+  .btn.danger.solid { background: var(--error-color, #db4437); border-color: var(--error-color, #db4437); color: #fff; }
+
+  /* Questions (delete, split, merge, a new label) in the card's own style */
+  dialog.ask { width: min(92vw, 400px); box-sizing: border-box; padding: 20px; border: 1px solid var(--mbl-line); border-radius: var(--ha-card-border-radius, 12px);
+    background: var(--card-background-color); color: var(--primary-text-color); box-shadow: 0 12px 40px rgba(0, 0, 0, .35); }
+  dialog.ask::backdrop { background: rgba(0, 0, 0, .5); }
+  dialog.ask h3 { margin: 0 0 8px; font-size: 1.1em; font-weight: 600; }
+  dialog.ask p { margin: 0 0 14px; color: var(--secondary-text-color); line-height: 1.45; }
+  dialog.ask input { width: 100%; margin-bottom: 14px; }
+  .askbtns { display: flex; justify-content: flex-end; gap: 8px; }
   tr.trip { cursor: pointer; }
   tr.trip:hover, tr.trip.open { background: color-mix(in srgb, var(--secondary-background-color) 60%, transparent); }
   tr.chargeline td { padding: 5px 6px; font-size: .88em; background: color-mix(in srgb, var(--success-color, #43a047) 8%, transparent); }
@@ -1622,6 +1701,11 @@ MBLogbookCard.css = `
     table.cards tr.chargeline td { padding: 7px 8px; }
     table.cards tr.maprow td { padding: 4px 4px 12px; }
     table.cards tr.plain td { padding: 18px; text-align: center; }
+    table.cards tr:is(.place, .unnamed, .rate) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "route dist" "meta label"; gap: 6px 12px; align-items: center; padding: 11px 4px; }
+    table.cards tr:is(.place, .unnamed, .rate) .c-dist { font-size: inherit; font-weight: inherit; }
+    table.cards tr.rate .c-meta2 { grid-area: meta; font-size: .9em; }
+    table.cards tr.unnamed { grid-template-areas: "route route" "meta dist"; }
+    .pform .pdel { margin-left: 0; }
     .tripactions { justify-content: flex-start; }
     .stepper .range { min-width: 0; padding: 0 6px; }
   }
@@ -1635,7 +1719,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.33.0";
+const CARD_VERSION = "0.34.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
