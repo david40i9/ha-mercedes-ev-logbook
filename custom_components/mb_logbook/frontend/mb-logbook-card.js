@@ -17,6 +17,31 @@ const PERIODS = [
 // Older configs used `days:`.
 const DAYS_TO_PERIOD = { 7: "week", 30: "month", 90: "quarter", 365: "year" };
 
+// Icons are Material Design Icons paths (the set Home Assistant uses), drawn inline so they
+// look the same on every device and need nothing from Home Assistant's own icon loader.
+const ICONS = {
+  route: "M18,15A3,3 0 0,1 21,18A3,3 0 0,1 18,21C16.69,21 15.58,20.17 15.17,19H14V17H15.17C15.58,15.83 16.69,15 18,15M18,17A1,1 0 0,0 17,18A1,1 0 0,0 18,19A1,1 0 0,0 19,18A1,1 0 0,0 18,17M18,8A1.43,1.43 0 0,0 19.43,6.57C19.43,5.78 18.79,5.14 18,5.14C17.21,5.14 16.57,5.78 16.57,6.57A1.43,1.43 0 0,0 18,8M18,2.57A4,4 0 0,1 22,6.57C22,9.56 18,14 18,14C18,14 14,9.56 14,6.57A4,4 0 0,1 18,2.57M8.83,17H10V19H8.83C8.42,20.17 7.31,21 6,21A3,3 0 0,1 3,18C3,16.69 3.83,15.58 5,15.17V14H7V15.17C7.85,15.47 8.53,16.15 8.83,17M6,17A1,1 0 0,0 5,18A1,1 0 0,0 6,19A1,1 0 0,0 7,18A1,1 0 0,0 6,17M6,3A3,3 0 0,1 9,6C9,7.31 8.17,8.42 7,8.83V10H5V8.83C3.83,8.42 3,7.31 3,6A3,3 0 0,1 6,3M6,5A1,1 0 0,0 5,6A1,1 0 0,0 6,7A1,1 0 0,0 7,6A1,1 0 0,0 6,5M11,19V17H13V19H11M7,13H5V11H7V13Z",
+  bolt: "M11 15H6L13 1V9H18L11 23V15Z",
+  left: "M15.41,16.58L10.83,12L15.41,7.41L14,6L8,12L14,18L15.41,16.58Z",
+  right: "M8.59,16.58L13.17,12L8.59,7.41L10,6L16,12L10,18L8.59,16.58Z",
+  up: "M13,20H11V8L5.5,13.5L4.08,12.08L12,4.16L19.92,12.08L18.5,13.5L13,8V20Z",
+  down: "M11,4H13V16L18.5,10.5L19.92,11.92L12,19.84L4.08,11.92L5.5,10.5L11,16V4Z",
+  download: "M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z",
+  clear: "M14.73,20.83L17.58,18L14.73,15.17L16.15,13.76L19,16.57L21.8,13.76L23.22,15.17L20.41,18L23.22,20.83L21.8,22.24L19,19.4L16.15,22.24L14.73,20.83M13,19.88C13.04,20.18 12.94,20.5 12.71,20.71C12.32,21.1 11.69,21.1 11.3,20.71L7.29,16.7C7.06,16.47 6.96,16.16 7,15.87V10.75L2.21,4.62C1.87,4.19 1.95,3.56 2.38,3.22C2.57,3.08 2.78,3 3,3V3H17V3C17.22,3 17.43,3.08 17.62,3.22C18.05,3.56 18.13,4.19 17.79,4.62L13,10.75V19.88M5.04,5L9,10.06V15.58L11,17.58V10.05L14.96,5H5.04Z",
+  car: "M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z",
+  distance: "M6.5,8.11C5.61,8.11 4.89,7.39 4.89,6.5A1.61,1.61 0 0,1 6.5,4.89C7.39,4.89 8.11,5.61 8.11,6.5V6.5A1.61,1.61 0 0,1 6.5,8.11M6.5,2C4,2 2,4 2,6.5C2,9.87 6.5,14.86 6.5,14.86C6.5,14.86 11,9.87 11,6.5C11,4 9,2 6.5,2M17.5,8.11A1.61,1.61 0 0,1 15.89,6.5C15.89,5.61 16.61,4.89 17.5,4.89C18.39,4.89 19.11,5.61 19.11,6.5A1.61,1.61 0 0,1 17.5,8.11M17.5,2C15,2 13,4 13,6.5C13,9.87 17.5,14.86 17.5,14.86C17.5,14.86 22,9.87 22,6.5C22,4 20,2 17.5,2M17.5,16C16.23,16 15.1,16.8 14.68,18H9.32C8.77,16.44 7.05,15.62 5.5,16.17C3.93,16.72 3.11,18.44 3.66,20C4.22,21.56 5.93,22.38 7.5,21.83C8.35,21.53 9,20.85 9.32,20H14.69C15.24,21.56 16.96,22.38 18.5,21.83C20.08,21.28 20.9,19.56 20.35,18C19.92,16.8 18.78,16 17.5,16V16M17.5,20.5A1.5,1.5 0 0,1 16,19A1.5,1.5 0 0,1 17.5,17.5A1.5,1.5 0 0,1 19,19A1.5,1.5 0 0,1 17.5,20.5Z",
+  eff: "M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z",
+  drain: "M18 9.29V5.33C18 4.6 17.4 4 16.67 4H15V2H9V4H7.33C6.6 4 6 4.6 6 5.33V20.67C6 21.4 6.6 22 7.33 22H12.41C13.46 22.63 14.69 23 16 23C19.87 23 23 19.87 23 16C23 12.83 20.89 10.15 18 9.29M8 6H16V9C12.13 9 9 12.13 9 16C9 17.5 9.47 18.87 10.26 20H8V6M16 21C13.24 21 11 18.76 11 16S13.24 11 16 11 21 13.24 21 16 18.76 21 16 21M16.5 16.25L19.36 17.94L18.61 19.16L15 17V12H16.5V16.25Z",
+  station: "M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M8,18V13.5H6L10,6V11H12L8,18Z",
+  home: "M12 5.69L17 10.19V18H15V12H9V18H7V10.19L12 5.69M12 3L2 12H5V20H11V14H13V20H19V12H22",
+  cash: "M5,6H23V18H5V6M14,9A3,3 0 0,1 17,12A3,3 0 0,1 14,15A3,3 0 0,1 11,12A3,3 0 0,1 14,9M9,8A2,2 0 0,1 7,10V14A2,2 0 0,1 9,16H19A2,2 0 0,1 21,14V10A2,2 0 0,1 19,8H9M1,10H3V20H19V22H1V10Z",
+  tag: "M21.41 11.58L12.41 2.58A2 2 0 0 0 11 2H4A2 2 0 0 0 2 4V11A2 2 0 0 0 2.59 12.42L11.59 21.42A2 2 0 0 0 13 22A2 2 0 0 0 14.41 21.41L21.41 14.41A2 2 0 0 0 22 13A2 2 0 0 0 21.41 11.58M13 20L4 11V4H11L20 13M6.5 5A1.5 1.5 0 1 1 5 6.5A1.5 1.5 0 0 1 6.5 5Z",
+};
+const icon = (name, cls = "") => `<svg class="ic${cls ? " " + cls : ""}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`;
+// Label colours: a fixed slot per label (never by position in a list), so Business is the
+// same colour on the trips, the tiles and the charts. Slot 0 is neutral.
+const LABEL_SLOTS = { Business: 1, Commute: 2, Personal: 3 };
+
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -42,7 +67,32 @@ class MBLogbookCard extends HTMLElement {
     const first = !this._hass;
     this._hass = hass;
     if (this._map) this._map.hass = hass;
-    if (first) this._init();
+    this.toggleAttribute("dark", !!hass.themes?.darkMode);
+    if (first) {
+      this._renderSkeleton();
+      this._init();
+    }
+  }
+
+  /** Grey placeholder shapes while the first load runs, so the card doesn't jump in. */
+  _renderSkeleton() {
+    const bars = (n, cls) => Array.from({ length: n }, () => `<div class="sk ${cls}"></div>`).join("");
+    this.shadowRoot.innerHTML = `<style>${MBLogbookCard.css}</style>
+      <ha-card aria-busy="true"><div class="sk sk-title"></div><div class=tiles>${bars(5, "sk-tile")}</div>${bars(8, "sk-row")}</ha-card>`;
+  }
+
+  /** Colour slot (1-8, 0 = neutral) for a trip label. */
+  _slot(label) {
+    if (!label) return 0;
+    if (LABEL_SLOTS[label]) return LABEL_SLOTS[label];
+    const others = (this._labels || []).filter((l) => !LABEL_SLOTS[l]);
+    const i = others.indexOf(label);
+    return i >= 0 && i < 5 ? i + 4 : 0;
+  }
+
+  /** A label as a coloured chip (dot plus text). */
+  _chip(label, auto = false) {
+    return `<span class="lchip${auto ? " auto" : ""}" style="--c:var(--mbl-c${this._slot(label)})"><i></i>${esc(label)}</span>`;
   }
 
   getCardSize() {
@@ -156,10 +206,10 @@ class MBLogbookCard extends HTMLElement {
     const labels = [...new Set([...(this._labels || []), ...rows.map((r) => r.label).filter(Boolean)])];
     const labelCell = (r) =>
       admin
-        ? `<select class=plabel data-loc="${esc(r.name)}" title="Default label for trips to or from here"><option value="">–</option>${labels
+        ? `<select class="plabel lsel${r.label ? "" : " none"}" style="--c:var(--mbl-c${this._slot(r.label)})" data-loc="${esc(r.name)}" title="Default label for trips to or from here"><option value="">–</option>${labels
             .map((l) => `<option value="${esc(l)}" ${l === r.label ? "selected" : ""}>${esc(l)}</option>`)
             .join("")}<option value="__other">Other…</option></select>`
-        : esc(r.label || "–");
+        : r.label ? this._chip(r.label) : "–";
     return this._sorted(rows, { name: (r) => r.name, radius: (r) => r.radius, uses: (r) => r.uses, label: (r) => r.label })
       .map((r) => {
         const home = r.is_home ? " <span class=chip>home</span>" : "";
@@ -175,7 +225,7 @@ class MBLogbookCard extends HTMLElement {
           <td>${labelCell(r)}</td>
           <td>${admin ? `<select class=pr>${opts}</select>` : Math.round(p.radius_m) + " m"}</td>
           <td class=n>${p.uses}</td>
-          <td class=n><button class=pmap>${this._openPlace === p.id ? "Hide map" : "Map"}</button>${admin ? ` <button class=psv>Save</button> <button class=pdel>Delete</button>` : ""}</td>
+          <td class="n acts"><button class="btn pmap">${this._openPlace === p.id ? "Hide map" : "Map"}</button>${admin ? `<button class="btn psv">Save</button><button class="btn danger pdel">Delete</button>` : ""}</td>
         </tr>${this._openPlace === p.id ? `<tr class=maprow><td colspan=5><div class="dim">Drag the pin to move this place or the circle's edge to resize it, then press Save.</div><div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
@@ -199,7 +249,7 @@ class MBLogbookCard extends HTMLElement {
       .map((u, i) => {
         const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
         return `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
-            <td class="n acts">${admin ? `<button class=nameit data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class=ignore data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td></tr>
+            <td class="n acts">${admin ? `<button class="btn sm nameit" data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class="btn sm quiet ignore" data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td></tr>
           ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
@@ -213,7 +263,7 @@ class MBLogbookCard extends HTMLElement {
       <table><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
         .map(
           (u) => `<tr><td>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class=n>${u.visits}</td><td>${this._date(u.last_ts)}</td>
-            <td class=n>${admin ? `<button class=nameit data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td></tr>`
+            <td class=n>${admin ? `<button class="btn sm nameit" data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td></tr>`
         )
         .join("")}</tbody></table></details>`
       : "";
@@ -294,7 +344,7 @@ class MBLogbookCard extends HTMLElement {
           ? hist
               .map(
                 (x) => `<div class=ratehist>From ${this._date(x.valid_from)}: <b>${this._rateText(x)}</b>${x.valid_from > now ? " <span class=chip>upcoming</span>" : ""}
-                  ${admin ? `<button class=ratedel data-rate="${x.id}">Delete</button>` : ""}</div>`
+                  ${admin ? `<button class="btn sm danger ratedel" data-rate="${x.id}">Delete</button>` : ""}</div>`
               )
               .join("")
           : `<div class=dim>No rates yet. Charges here have no cost${loc.metered && this._car?.has_price ? " unless metered" : ""}.</div>`;
@@ -306,12 +356,12 @@ class MBLogbookCard extends HTMLElement {
                <span class=offpeak><span>Off-peak (optional)</span>
                  <input type=number class=roff min=0 max=10000 step=any placeholder="per kWh, e.g. 0.07">
                  <span>from</span><input type=time class=roffs value="00:30"><span>to</span><input type=time class=roffe value="05:30"></span>
-               <button class="primary rsave" data-loc="${i}">Add rate</button>
+               <button class="btn primary rsave" data-loc="${i}">Add rate</button>
                <div class=dim>Charges from that date on use the new rate; earlier charges keep the rate they had. With an off-peak price, each charge is costed by how much of it fell in that window every day.${this._car?.has_price ? " Home charges use your live price sensor instead." : ""}</div>
              </div>`
           : "";
         return `<tr><td>${esc(loc.location)}</td><td>${cur}</td><td class=n>${loc.charges}</td>
-            <td class=n><button class=pmap data-rates="${i}">${open ? "Hide" : "Rates"}</button></td></tr>
+            <td class="n acts"><button class="btn pmap" data-rates="${i}">${open ? "Hide" : "Rates"}</button></td></tr>
           ${open ? `<tr class=maprow><td colspan=4>${histRows}${form}</td></tr>` : ""}`;
       })
       .join("");
@@ -559,7 +609,7 @@ class MBLogbookCard extends HTMLElement {
     const near = this._near(lat, lon);
     const hint = near ? ` near ${esc(near.name)}` : "";
     if (!this._hass.user?.is_admin) return `<span class=dim>unnamed${hint}</span>`;
-    return `<button class=nameit data-kind="${kind}" data-id="${id}" data-end="${end || ""}"${near ? ` title="${esc(near.text)}"` : ""}>unnamed${hint} · name it</button>`;
+    return `<button class="btn sm dashed nameit" data-kind="${kind}" data-id="${id}" data-end="${end || ""}"${near ? ` title="${esc(near.text)}"` : ""}>unnamed${hint} · name it</button>`;
   }
 
   _nameForm(lat, lon) {
@@ -574,10 +624,10 @@ class MBLogbookCard extends HTMLElement {
         <input id=pname list=pnames maxlength=60 placeholder="e.g. Mum's, Tesco Extra" autocomplete=off>
         <datalist id=pnames>${names}</datalist>
         <select id=pradius title="Anything within this distance gets the name">${radii}</select>
-        <button class=primary id=psave data-lat="${lat}" data-lon="${lon}">Save</button>
-        <button id=pcancel>Cancel</button>
-        <button id=pignore title="It doesn't need a name: stop asking about it on the Places tab">Ignore</button>
-        <button id=psuggest title="Asks OpenStreetMap for named places near the pin. Only this point is sent.">Suggest names</button>
+        <button class="btn primary" id=psave data-lat="${lat}" data-lon="${lon}">Save</button>
+        <button class=btn id=pcancel>Cancel</button>
+        <button class=btn id=psuggest title="Asks OpenStreetMap for named places near the pin. Only this point is sent.">Suggest names</button>
+        <button class="btn quiet" id=pignore title="It doesn't need a name: stop asking about it on the Places tab">Ignore</button>
         <div id=psuggestions class=suggestions></div>
         <div class=dim>Drag the pin on the map to move the place, or the circle's edge to resize it. This stop (the small dot) always keeps the name, even if the GPS put it outside the circle. The name also applies to every trip and charge inside the circle or near the dot, past and future. Using a name you already have links this stop to that place.</div>
       </div>`;
@@ -588,7 +638,7 @@ class MBLogbookCard extends HTMLElement {
   _summary() {
     if (this._tab === "places") return "";
     const tiles = this._tab === "charges" ? this._chargeTiles() : this._tripTiles();
-    return `<div class=tiles>${tiles.map(([k, v]) => `<div class=tile><div class=k>${k}</div><div class=v>${v}</div></div>`).join("")}</div>`;
+    return `<div class=tiles>${tiles.map(([k, v, i]) => `<div class=tile>${icon(i, "ti")}<div><div class=k>${k}</div><div class=v>${v}</div></div></div>`).join("")}</div>`;
   }
 
   _chargeTiles() {
@@ -600,11 +650,11 @@ class MBLogbookCard extends HTMLElement {
     const cost = costed.reduce((s, c) => s + c.cost, 0);
     const uncosted = ch.length - costed.length;
     return [
-      ["Sessions", ch.length],
-      ["Energy added", kwh ? `${kwh.toFixed(0)} kWh` : "–"],
-      ["At home", ch.filter((c) => c.at_home).length],
-      ["Charging cost", costed.length ? this._money(cost) + (uncosted ? ` <small class=dim>+${uncosted} unpriced</small>` : "") : "–"],
-      ["Average per kWh", cKwh ? this._money(cost / cKwh, true) : "–"],
+      ["Sessions", ch.length, "station"],
+      ["Energy added", kwh ? `${kwh.toFixed(0)} kWh` : "–", "bolt"],
+      ["At home", ch.filter((c) => c.at_home).length, "home"],
+      ["Charging cost", costed.length ? this._money(cost) + (uncosted ? ` <small class=dim>+${uncosted} unpriced</small>` : "") : "–", "cash"],
+      ["Average per kWh", cKwh ? this._money(cost / cKwh, true) : "–", "tag"],
     ];
   }
 
@@ -627,11 +677,11 @@ class MBLogbookCard extends HTMLElement {
     const hours = parks.reduce((s, x) => s + dh(x), 0);
     const drain = hours ? (parks.reduce((s, x) => s + x.park_soc_drop, 0) / hours) * 24 : null;
     return [
-      ["Trips", t.length],
-      ["Distance", this._dist(km, 0)],
-      ["Energy used", kwh ? `${kwh.toFixed(0)} kWh` : "–"],
-      ["Efficiency", this._eff(kmKnown, kwh)],
-      ["Idle drain", drain != null ? `${drain.toFixed(2)} %/day` : "–"],
+      ["Trips", t.length, "car"],
+      ["Distance", this._dist(km, 0), "distance"],
+      ["Energy used", kwh ? `${kwh.toFixed(0)} kWh` : "–", "bolt"],
+      ["Efficiency", this._eff(kmKnown, kwh), "eff"],
+      ["Idle drain", drain != null ? `${drain.toFixed(2)} %/day` : "–", "drain"],
     ];
   }
 
@@ -713,11 +763,11 @@ class MBLogbookCard extends HTMLElement {
 
   _labelCell(x) {
     if (!this._hass.user?.is_admin)
-      return x.label ? `<span class="chip ${x.label_auto ? "auto" : ""}">${esc(x.label)}</span>` : "";
+      return x.label ? this._chip(x.label, x.label_auto) : "";
     const opts = [...new Set([...(this._labels || []), ...(x.label ? [x.label] : [])])];
     // "" = no label of its own: shows the place's default ("auto: …") if there is one.
     const manual = x.label_auto ? null : x.label;
-    return `<select class="tlabel ${x.label_auto ? "auto" : ""}" data-id="${x.id}" title="${x.label_auto ? "From the place's default label; pick one to override" : ""}">
+    return `<select class="tlabel lsel${x.label_auto ? " auto" : ""}${x.label ? "" : " none"}" style="--c:var(--mbl-c${this._slot(x.label)})" data-id="${x.id}" title="${x.label_auto ? "From the place's default label; pick one to override" : ""}">
         <option value="">${x.label_auto ? `auto: ${esc(x.label)}` : "–"}</option>
         ${opts.map((l) => `<option value="${esc(l)}" ${l === manual ? "selected" : ""}>${esc(l)}</option>`).join("")}
         <option value="__other">Other…</option>
@@ -730,13 +780,13 @@ class MBLogbookCard extends HTMLElement {
     const filters = [["all", "All"], ...present.map((l) => [l, l]), ["__none", "Unlabelled"]];
     const f = this._labelFilter || "all";
     const byLabel = present
-      .map((l) => `${esc(l)} ${this._dist(this._trips.filter((t) => t.label === l).reduce((s, t) => s + t.distance_km, 0))}`)
-      .join(" · ");
+      .map((l) => `<span class=ltotal><i style="background:var(--mbl-c${this._slot(l)})"></i>${esc(l)} <b>${this._dist(this._trips.filter((t) => t.label === l).reduce((s, t) => s + t.distance_km, 0))}</b></span>`)
+      .join("");
     return `<div class=labelbar>
-        <div class=seg>${filters.map(([v, l]) => `<button data-lfilter="${esc(v)}" class="${v === f ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
-        <span class=dim>${byLabel}</span>
-        ${this._filtering ? `<button class=cfclear title="Show all trips again">Clear filters</button>` : ""}
-        <button class=csv title="Download the trips shown, for mileage claims">Export CSV</button>
+        <div class="seg sm">${filters.map(([v, l]) => `<button data-lfilter="${esc(v)}" class="${v === f ? "on" : ""}">${esc(l)}</button>`).join("")}</div>
+        <span class=ltotals>${byLabel}</span>
+        ${this._filtering ? `<button class="btn accent cfclear" title="Show all trips again">${icon("clear")}Clear filters</button>` : ""}
+        <button class="btn csv" title="Download the trips shown, for mileage claims">${icon("download")}Export CSV</button>
       </div>`;
   }
 
@@ -826,13 +876,13 @@ class MBLogbookCard extends HTMLElement {
     ].filter(Boolean);
     const near = c.place ? null : this._near(c.lat, c.lon);
     const where = c.place ? esc(c.place) : `unnamed place${near ? ` near ${esc(near.name)}` : ""}`;
-    return `<tr class=chargeline><td colspan=9>⚡ Charged at ${where} <span class=dim>· ${bits.join(" · ")}</span></td></tr>`;
+    return `<tr class=chargeline><td colspan=9>${icon("bolt")}Charged at ${where} <span class=dim>· ${bits.join(" · ")}</span></td></tr>`;
   }
 
   /** A clickable column header that sorts the current tab's table. */
   _th(key, label, num) {
     const s = this._sort[this._tab];
-    const arrow = s && s.key === key ? (s.dir > 0 ? " ▲" : " ▼") : "";
+    const arrow = s && s.key === key ? icon(s.dir > 0 ? "up" : "down") : "";
     return `<th class="sort${num ? " n" : ""}${arrow ? " on" : ""}" data-sort="${key}" title="Sort by ${esc(label.toLowerCase())}">${esc(label)}${arrow}</th>`;
   }
 
@@ -898,8 +948,8 @@ class MBLogbookCard extends HTMLElement {
             <td class=n>${kwh ? kwh.toFixed(1) + " kWh" : "–"}</td>
             <td class=n>${this._eff(x.distance_km, kwh)}</td>
             <td class=n>${park}</td>
-            <td class=n>${x.point_count > 1 ? "🗺" : ""}</td>
-          </tr>${open ? `<tr class=maprow><td colspan=9>${form}<div id=mapbox></div>${this._hass.user?.is_admin && !naming ? `<div class=tripactions>${x.end_ts - x.start_ts >= 2400 ? `<button class=splittrip data-id="${x.id}" title="For two drives logged as one: splits at the longest stop">Split at the stop</button> ` : ""}<button class=mergetrip data-id="${x.id}" title="For one drive logged as two: joins this trip with the one after it">Merge with next trip</button> <button class=deltrip data-id="${x.id}">Delete this trip</button></div>` : ""}</td></tr>` : ""}`;
+            <td class="n dim">${x.point_count > 1 ? `<span title="Route recorded: click the row for the map">${icon("route")}</span>` : ""}</td>
+          </tr>${open ? `<tr class=maprow><td colspan=9>${form}<div id=mapbox></div>${this._hass.user?.is_admin && !naming ? `<div class=tripactions>${x.end_ts - x.start_ts >= 2400 ? `<button class="btn splittrip" data-id="${x.id}" title="For two drives logged as one: splits at the longest stop">Split at the stop</button>` : ""}<button class="btn mergetrip" data-id="${x.id}" title="For one drive logged as two: joins this trip with the one after it">Merge with next trip</button><button class="btn danger deltrip" data-id="${x.id}">Delete this trip</button></div>` : ""}</td></tr>` : ""}`;
       })
       .join("");
   }
@@ -962,17 +1012,17 @@ class MBLogbookCard extends HTMLElement {
       this._tab === "places"
         ? "<div></div>"
         : `<div class=periodbar><div class=seg>${PERIODS.map(([v, l]) => `<button data-period="${v}" class="${v === this._period ? "on" : ""}">${l}</button>`).join("")}</div>
-           <div class=stepper><button class=step data-step="1" title="Previous">‹</button><span class=range>${esc(this._range().label)}</span><button class=step data-step="-1" title="Next" ${this._offset === 0 ? "disabled" : ""}>›</button></div></div>`;
+           <div class=stepper><button class=step data-step="1" title="Previous" aria-label="Previous">${icon("left")}</button><span class=range>${esc(this._range().label)}</span><button class=step data-step="-1" title="Next" aria-label="Next" ${this._offset === 0 ? "disabled" : ""}>${icon("right")}</button></div></div>`;
     const unnamed = (this._unnamed || []).length;
     const tabs = `<div class=seg>${[["trips", "Trips"], ["charges", "Charging"], ["places", "Places"]]
       .map(([v, l]) => `<button data-tab="${v}" class="${v === this._tab ? "on" : ""}">${l}${v === "places" && unnamed ? ` <span class=badge title="${unnamed} unnamed place${unnamed === 1 ? "" : "s"}">${unnamed > 99 ? "99+" : unnamed}</span>` : ""}</button>`)
       .join("")}</div>`;
-    const clear = this._filtering ? `<button class=cfclear title="Show all rows again">Clear filters</button>` : "";
+    const clear = this._filtering ? `<button class="btn accent cfclear" title="Show all rows again">${icon("clear")}Clear filters</button>` : "";
     const table =
       this._tab === "trips"
         ? `${this._labelBar()}<table><thead><tr>${this._th("start", "Start")}${this._th("route", "Route")}${this._th("label", "Label")}${this._th("dist", "Distance", 1)}${this._th("used", "Battery", 1)}${this._th("kwh", "Used", 1)}${this._th("eff", "Efficiency", 1)}${this._th("park", "Parked before", 1)}<th></th></tr>${this._trips.length ? this._tripFilterRow() : ""}</thead><tbody>${this._tripRows()}</tbody></table>`
         : this._tab === "charges"
-          ? `${this._charges.length ? `<div class=labelbar>${clear}<button class="csv csvc" title="Download the charging sessions shown">Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr>${this._charges.length ? this._chargeFilterRow() : ""}</thead><tbody>${this._chargeRows()}</tbody></table>
+          ? `${this._charges.length ? `<div class=labelbar>${clear}<button class="btn csv csvc" title="Download the charging sessions shown">${icon("download")}Export CSV</button></div>` : ""}<table><thead><tr>${this._th("start", "Start")}${this._th("where", "Where")}${this._th("soc", "Battery", 1)}${this._th("kwh", "Energy", 1)}${this._th("peak", "Peak", 1)}${this._th("cost", "Cost", 1)}${this._th("perkwh", "Per kWh", 1)}</tr>${this._charges.length ? this._chargeFilterRow() : ""}</thead><tbody>${this._chargeRows()}</tbody></table>
              ${this._rateSection()}`
           : `${this._unnamedSection()}<table><thead><tr>${this._th("name", "Name")}${this._th("label", "Default label")}${this._th("radius", "Radius")}${this._th("uses", "Trip ends / charges", 1)}<th></th></tr></thead><tbody>${this._placeRows()}</tbody></table>
              <div class="dim pad">Named places are shared by all cars. Home Assistant zones take priority where they overlap.
@@ -1355,81 +1405,134 @@ class MBLogbookCard extends HTMLElement {
 }
 
 MBLogbookCard.css = `
-  ha-card { padding: 12px 14px 8px; }
+  /* One set of sizes and colours for the whole card. Surfaces and text come from the
+   * Home Assistant theme; the eight label colours have a light and a dark step. */
+  :host { --mbl-r: 8px; --mbl-r-box: 10px; --mbl-h: 32px; --mbl-line: var(--divider-color);
+    --mbl-c0: var(--secondary-text-color); --mbl-c1: #2a78d6; --mbl-c2: #eb6834; --mbl-c3: #1baf7a; --mbl-c4: #eda100;
+    --mbl-c5: #e87ba4; --mbl-c6: #008300; --mbl-c7: #6250d6; --mbl-c8: #e34948; }
+  :host([dark]) { --mbl-c1: #3987e5; --mbl-c2: #d95926; --mbl-c3: #199e70; --mbl-c4: #c98500; --mbl-c5: #d55181; --mbl-c7: #9085e9; --mbl-c8: #e66767; }
+  ha-card { padding: 14px 16px 10px; }
   .pad { padding: 12px; }
+  .ic { width: 18px; height: 18px; fill: currentColor; flex: none; vertical-align: -4px; }
   .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .title { font-size: 1.2em; font-weight: 600; }
-  .bar { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
-  .seg { display: inline-flex; border: 1px solid var(--divider-color); border-radius: 10px; overflow: hidden; }
-  .seg button { background: none; border: 0; color: var(--secondary-text-color); padding: 6px 12px; font: inherit; cursor: pointer; }
+  .title { font-size: 1.25em; font-weight: 600; }
+  .bar { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  button, select, input { font: inherit; }
+  button { cursor: pointer; }
+  :is(button, select, input, th.sort):focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+
+  /* Segmented switches */
+  .seg { display: inline-flex; border: 1px solid var(--mbl-line); border-radius: var(--mbl-r-box); overflow: hidden; }
+  .seg button { background: none; border: 0; color: var(--secondary-text-color); padding: 0 12px; height: calc(var(--mbl-h) - 2px); white-space: nowrap; }
+  .seg button:hover { color: var(--primary-text-color); }
   .seg button.on { background: var(--primary-color); color: var(--text-primary-color, #fff); }
-  .suggestions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
-  button.suggestion { padding: 4px 10px; border-radius: 14px; border: 1px solid var(--divider-color); background: var(--secondary-background-color); color: var(--primary-text-color); font: inherit; font-size: .9em; cursor: pointer; }
+  .seg.sm button { padding: 0 10px; height: 26px; font-size: .9em; }
+
+  /* Buttons: plain, primary (filled), accent (outline), danger, quiet (text only), dashed */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--mbl-h); padding: 0 12px; box-sizing: border-box;
+    border-radius: var(--mbl-r); border: 1px solid var(--mbl-line); background: none; color: var(--primary-text-color); white-space: nowrap; }
+  .btn:hover { background: var(--secondary-background-color); }
+  .btn .ic { width: 16px; height: 16px; }
+  .btn.sm { height: 26px; padding: 0 9px; font-size: .85em; }
+  .btn.primary { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); font-weight: 500; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.accent { border-color: var(--primary-color); color: var(--primary-color); }
+  .btn.danger { border-color: color-mix(in srgb, var(--error-color, #db4437) 55%, transparent); color: var(--error-color, #db4437); }
+  .btn.danger:hover { background: color-mix(in srgb, var(--error-color, #db4437) 12%, transparent); }
+  .btn.quiet { border-color: transparent; color: var(--secondary-text-color); }
+  .btn.dashed { border-style: dashed; color: var(--secondary-text-color); }
+  .btn.dashed:hover { color: var(--primary-color); border-color: var(--primary-color); background: none; }
+  .acts { white-space: nowrap; }
+  .acts .btn + .btn { margin-left: 6px; }
+  button.step { display: inline-grid; place-items: center; width: var(--mbl-h); height: var(--mbl-h); padding: 0; border-radius: 50%; border: 1px solid var(--mbl-line); background: none; color: var(--primary-text-color); }
+  button.step:hover:not(:disabled) { background: var(--secondary-background-color); }
+  button.step:disabled { opacity: .35; cursor: default; }
+  button.suggestion { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--mbl-line); background: var(--secondary-background-color); color: var(--primary-text-color); font-size: .9em; }
   button.suggestion:hover { border-color: var(--primary-color); }
-  h3.sub { font-size: 1em; font-weight: 600; margin: 18px 0 6px; }
-  .ratehist { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-  button.ratedel { padding: 2px 8px; border-radius: 6px; border: 1px solid var(--divider-color); background: none; color: var(--secondary-text-color); font: inherit; font-size: .85em; cursor: pointer; }
-  .tripactions { display: flex; justify-content: flex-end; padding-top: 8px; }
-  button.deltrip { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--error-color, #f38ba8); background: none; color: var(--error-color, #f38ba8); font: inherit; cursor: pointer; }
-  .labelbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 8px; }
-  .labelbar .seg button { padding: 4px 10px; font-size: .9em; }
-  button.csv { margin-left: auto; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font: inherit; font-size: .9em; cursor: pointer; }
-  select.tlabel.auto { color: var(--secondary-text-color); font-style: italic; }
-  .chip.auto { font-style: italic; }
-  select.plabel { padding: 3px 4px; border-radius: 6px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: .9em; }
-  select.tlabel { padding: 3px 4px; border-radius: 6px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: .85em; max-width: 9em; }
+  .suggestions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* Fields */
+  .nameform input, td input.pn, .nameform select, td select.pr { height: var(--mbl-h); box-sizing: border-box; padding: 0 8px; border-radius: var(--mbl-r);
+    border: 1px solid var(--mbl-line); background: var(--card-background-color); color: var(--primary-text-color); }
+  .nameform input, td input.pn { flex: 1; min-width: 160px; }
+  .nameform input[type=checkbox] { flex: none; min-width: 0; width: auto; height: auto; margin: 0; }
+  select.cf { width: 100%; max-width: 160px; height: 24px; font-size: .8em; padding: 0 4px; border-radius: 6px; border: 1px solid var(--mbl-line); background: var(--card-background-color); color: var(--secondary-text-color); }
+  select.cf.on { border-color: var(--primary-color); color: var(--primary-color); }
+
+  /* Labels: a tinted pill in the label's own colour. The dropdown is the same pill. */
+  .lchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: .85em; white-space: nowrap;
+    background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--primary-text-color); }
+  .lchip i, .ltotal i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+  .lchip.auto { font-style: italic; }
+  select.lsel { appearance: none; -webkit-appearance: none; height: 26px; max-width: 12.5em; padding: 0 24px 0 10px; border-radius: 999px; font-size: .85em;
+    border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); color: var(--primary-text-color); text-overflow: ellipsis;
+    background: color-mix(in srgb, var(--c) 16%, transparent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23888' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E") no-repeat right 4px center / 18px; }
+  select.lsel.auto { font-style: italic; background-color: color-mix(in srgb, var(--c) 8%, transparent); border-style: dashed; }
+  select.lsel.none { background-color: transparent; border: 1px dashed var(--mbl-line); color: var(--secondary-text-color); }
+  select.lsel option { background: var(--card-background-color); color: var(--primary-text-color); font-style: normal; }
+  .labelbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+  .labelbar .csv { margin-left: auto; }
+  .labelbar .cfclear { margin-left: auto; }
+  .labelbar .cfclear + .csv { margin-left: 0; }
+  .ltotals { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; font-size: .85em; color: var(--secondary-text-color); }
+  .ltotal { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .ltotal b { font-weight: 600; color: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+
   .periodbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .stepper { display: inline-flex; align-items: center; gap: 4px; }
   .stepper .range { min-width: 9em; text-align: center; font-weight: 500; }
-  button.step { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font-size: 1.2em; line-height: 1; cursor: pointer; }
-  button.step:disabled { opacity: .35; cursor: default; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 10px; }
-  .tile { background: var(--secondary-background-color); border-radius: 10px; padding: 8px 10px; }
-  .k { font-size: .78em; color: var(--secondary-text-color); }
-  .v { font-size: 1.1em; font-weight: 600; margin-top: 2px; }
+
+  /* Figures */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .tile { display: flex; align-items: center; gap: 10px; background: var(--secondary-background-color); border-radius: var(--mbl-r-box); padding: 10px 12px; min-width: 0; }
+  .ti { width: 20px; height: 20px; padding: 6px; border-radius: var(--mbl-r); color: var(--primary-color); background: color-mix(in srgb, var(--primary-color) 14%, transparent); }
+  .k { font-size: .78em; color: var(--secondary-text-color); white-space: nowrap; }
+  .v { font-size: 1.15em; font-weight: 600; margin-top: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* Tables */
   .scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: .9em; }
-  th { text-align: left; font-weight: 500; color: var(--secondary-text-color); padding: 6px; border-bottom: 1px solid var(--divider-color); white-space: nowrap; }
+  th { text-align: left; font-weight: 500; font-size: .92em; color: var(--secondary-text-color); padding: 6px; border-bottom: 1px solid var(--mbl-line); white-space: nowrap; }
   th.sort { cursor: pointer; user-select: none; }
-  tr.filters th { padding-top: 0; font-weight: normal; }
-  select.cf { width: 100%; max-width: 160px; font: inherit; font-size: .8em; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--secondary-text-color); }
-  select.cf.on { border-color: var(--primary-color); color: var(--primary-color); }
-  button.cfclear { margin-left: auto; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--primary-color); background: none; color: var(--primary-color); font: inherit; font-size: .9em; cursor: pointer; }
-  .labelbar .cfclear + .csv { margin-left: 0; }
   th.sort:hover, th.sort.on { color: var(--primary-color); }
-  td { padding: 6px; border-bottom: 1px solid var(--divider-color); vertical-align: top; }
-  .n { text-align: right; white-space: nowrap; }
+  th .ic { width: 14px; height: 14px; vertical-align: -2px; margin-left: 2px; }
+  tr.filters th { padding-top: 0; font-weight: normal; }
+  td { padding: 7px 6px; border-bottom: 1px solid var(--mbl-line); vertical-align: top; }
+  .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tr[data-place] td { vertical-align: middle; }
   tr.trip { cursor: pointer; }
-  tr.trip:hover, tr.trip.open { background: var(--secondary-background-color); }
+  tr.trip:hover, tr.trip.open { background: color-mix(in srgb, var(--secondary-background-color) 60%, transparent); }
+  tr.chargeline td { padding: 5px 6px; font-size: .88em; background: color-mix(in srgb, var(--success-color, #43a047) 8%, transparent); }
+  tr.chargeline .ic { width: 15px; height: 15px; vertical-align: -3px; margin-right: 6px; color: var(--success-color, #43a047); }
+  .tripactions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 10px; }
+  h3.sub { font-size: 1em; font-weight: 600; margin: 20px 0 6px; }
+  .ratehist { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
   .dim { color: var(--secondary-text-color); font-size: .85em; }
+  td.dim { font-size: inherit; }
   .empty { text-align: center; color: var(--secondary-text-color); padding: 18px; }
-  .badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 10px; background: var(--error-color, #db4437); color: #fff; font-size: .72em; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: middle; box-sizing: border-box; }
-  .chip { font-size: .75em; padding: 1px 6px; border-radius: 8px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
+  .badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 999px; background: var(--error-color, #db4437); color: #fff; font-size: .72em; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: middle; box-sizing: border-box; }
+  .chip { font-size: .75em; padding: 1px 7px; border-radius: 999px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
   .chip.live { background: var(--success-color, #43a047); color: #fff; }
-  button.nameit { background: none; border: 1px dashed var(--divider-color); border-radius: 8px; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; cursor: pointer; }
-  button.nameit:hover { color: var(--primary-color); border-color: var(--primary-color); }
-  button.ignore { background: none; border: none; color: var(--secondary-text-color); font: inherit; font-size: .85em; padding: 1px 6px; margin-left: 4px; cursor: pointer; text-decoration: underline dotted; }
-  button.ignore:hover { color: var(--primary-color); }
-  td.acts { white-space: nowrap; }
   details.ignored { margin-top: 10px; }
   details.ignored summary { cursor: pointer; color: var(--secondary-text-color); font-size: .9em; }
   .nameform { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0 10px; }
   .offpeak { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .nameform label { display: inline-flex; align-items: center; gap: 4px; }
-  .nameform input[type=checkbox] { flex: none; min-width: 0; width: auto; margin: 0; }
-  .nameform input, td input.pn { flex: 1; min-width: 160px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
-  .nameform select, td select.pr { padding: 6px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; }
-  .nameform button, td button.psv, td button.pdel { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font: inherit; cursor: pointer; }
-  .nameform button.primary { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
   .nameform .dim { flex-basis: 100%; }
-  #mapbox { height: 320px; border-radius: 10px; overflow: hidden; }
-  tr.chargeline td { padding: 4px 6px; font-size: .85em; color: var(--success-color, #a6e3a1); background: color-mix(in srgb, var(--success-color, #a6e3a1) 7%, transparent); }
+  #mapbox { height: 320px; border-radius: var(--mbl-r-box); overflow: hidden; }
   #mapbox.small { height: 240px; }
-  td button.pmap { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); font: inherit; cursor: pointer; }
   #mapbox ha-map { height: 100%; display: block; }
+
+  /* Loading placeholders */
+  .sk { border-radius: var(--mbl-r); background: linear-gradient(90deg, var(--secondary-background-color) 25%, color-mix(in srgb, var(--secondary-background-color) 55%, transparent) 40%, var(--secondary-background-color) 60%) 0 0 / 300% 100%; animation: mbl-sk 1.4s ease-in-out infinite; }
+  .sk-title { width: 180px; height: 24px; margin-bottom: 52px; }
+  .sk-tile { height: 56px; border-radius: var(--mbl-r-box); }
+  .sk-row { height: 30px; margin-top: 10px; }
+  @keyframes mbl-sk { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.31.0";
+const CARD_VERSION = "0.32.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
