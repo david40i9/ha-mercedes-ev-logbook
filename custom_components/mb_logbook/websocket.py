@@ -69,6 +69,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_temp_efficiency)
     websocket_api.async_register_command(hass, ws_suggest_names)
     websocket_api.async_register_command(hass, ws_trip_label)
+    websocket_api.async_register_command(hass, ws_trips_expensed)
     websocket_api.async_register_command(hass, ws_labels)
     websocket_api.async_register_command(hass, ws_place_labels)
     websocket_api.async_register_command(hass, ws_unnamed_places)
@@ -240,6 +241,26 @@ async def ws_trip_label(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
         connection.send_error(msg["id"], "not_found", "No such trip")
         return
     connection.send_result(msg["id"], {"trip_id": msg["trip_id"], "label": msg.get("label") or None})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/trips_expensed",
+        vol.Required("trip_ids"): vol.All([int], vol.Length(min=1, max=5000)),
+        vol.Optional("sent", default=True): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_trips_expensed(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
+    """Mark trips as sent to expenses (dated now), or take the mark off again."""
+    db = hass.data[DOMAIN]["db"]
+    sent_ts = time.time() if msg["sent"] else None
+    found = await hass.async_add_executor_job(db.set_trips_expensed, msg["trip_ids"], sent_ts)
+    if not found:
+        connection.send_error(msg["id"], "not_found", "No such trip")
+        return
+    connection.send_result(msg["id"], {"trips": found, "expensed_ts": sent_ts})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/place_labels"})
@@ -829,6 +850,8 @@ async def ws_split_trip(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
         **rules.park_fields(rules.new_park(t1, soc1, False), t2, soc2),
     }
     await hass.async_add_executor_job(db.replace_trips, [msg["trip_id"]], [leg1, leg2])
+    # Both halves of a trip already sent to expenses stay sent.
+    await hass.async_add_executor_job(db.carry_expensed, trip["car"], [trip["start_ts"]], [trip["start_ts"], t2])
     _refresh_all(hass)
     connection.send_result(msg["id"], {"split_at": t1, "resumed": t2})
 
@@ -863,5 +886,9 @@ async def ws_merge_trips(hass: HomeAssistant, connection, msg: dict[str, Any]) -
         "gap": first.get("gap") or nxt.get("gap"),
     }
     await hass.async_add_executor_job(db.replace_trips, [first["id"], nxt["id"]], [merged])
+    # Sent to expenses only if both trips were.
+    await hass.async_add_executor_job(
+        db.carry_expensed, first["car"], [first["start_ts"], nxt["start_ts"]], [first["start_ts"]]
+    )
     _refresh_all(hass)
     connection.send_result(msg["id"], {"merged": [first["id"], nxt["id"]]})

@@ -56,6 +56,8 @@ async def test_writes_need_an_admin(ha, car, hass_ws_client, hass_read_only_acce
     assert len(await trips(ha, car)) == 1
     await client.send_json({"id": 3, "type": "mb_logbook/place_ignore", "lat": 52.0, "lon": -1.0})
     assert (await client.receive_json())["error"]["code"] == "unauthorized"
+    await client.send_json({"id": 4, "type": "mb_logbook/trips_expensed", "trip_ids": [t["id"]]})
+    assert (await client.receive_json())["error"]["code"] == "unauthorized"
 
 
 async def test_labels_and_place_defaults(ha, car, ws, advance):
@@ -74,6 +76,19 @@ async def test_labels_and_place_defaults(ha, car, ws, advance):
     assert (await ws("ignored_places"))["success"]
     assert not (await ws("place_ignore", lat=95, lon=0))["success"]
     assert (await ws("place_unignore", id=sid))["success"]
+
+
+async def test_sent_to_expenses(ha, car, ws, advance):
+    await drive(ha, advance)
+    [t] = await trips(ha, car)
+    assert t["expensed_ts"] is None
+    done = (await ws("trips_expensed", trip_ids=[t["id"], 99999]))["result"]
+    assert done["trips"] == 1 and done["expensed_ts"]
+    assert (await trips(ha, car))[0]["expensed_ts"] == done["expensed_ts"]
+    assert (await ws("trips_expensed", trip_ids=[t["id"]], sent=False))["result"]["expensed_ts"] is None
+    assert (await trips(ha, car))[0]["expensed_ts"] is None
+    assert (await ws("trips_expensed", trip_ids=[99999]))["error"]["code"] == "not_found"
+    assert not (await ws("trips_expensed", trip_ids=[]))["success"]
 
 
 async def test_rates_validate_and_cost_charges(ha, car, ws):
@@ -107,9 +122,12 @@ async def test_merge_and_split(ha, car, ws, advance):
     await drive(ha, advance, km=6)
     first, second = sorted(await trips(ha, car), key=lambda t: t["start_ts"])
     await ws("trip_label", trip_id=first["id"], label="Business")
+    await ws("trips_expensed", trip_ids=[first["id"]])
     assert (await ws("merge_trips", trip_id=first["id"]))["success"]
     [merged] = await trips(ha, car)
     assert merged["distance_km"] == 16 and merged["label"] == "Business"
+    assert merged["expensed_ts"] is None  # only one of the two had been sent
+    await ws("trips_expensed", trip_ids=[merged["id"]])
     assert merged["end_ts"] == second["end_ts"]
     # The merged trip has a 30+ minute gap in its route: split it again.
     split = await ws("split_trip", trip_id=merged["id"])
@@ -117,6 +135,7 @@ async def test_merge_and_split(ha, car, ws, advance):
     legs = sorted(await trips(ha, car), key=lambda t: t["start_ts"])
     assert len(legs) == 2 and sum(t["distance_km"] for t in legs) == pytest.approx(16)
     assert legs[0]["label"] == "Business"
+    assert legs[0]["expensed_ts"] and legs[0]["expensed_ts"] == legs[1]["expensed_ts"]
     assert (await ws("merge_trips", trip_id=legs[1]["id"]))["error"]["code"] == "no_next"
 
 

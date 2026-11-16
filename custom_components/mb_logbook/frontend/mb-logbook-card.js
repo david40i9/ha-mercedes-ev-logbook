@@ -36,6 +36,7 @@ const ICONS = {
   home: "M12 5.69L17 10.19V18H15V12H9V18H7V10.19L12 5.69M12 3L2 12H5V20H11V14H13V20H19V12H22",
   cash: "M5,6H23V18H5V6M14,9A3,3 0 0,1 17,12A3,3 0 0,1 14,15A3,3 0 0,1 11,12A3,3 0 0,1 14,9M9,8A2,2 0 0,1 7,10V14A2,2 0 0,1 9,16H19A2,2 0 0,1 21,14V10A2,2 0 0,1 19,8H9M1,10H3V20H19V22H1V10Z",
   filter: "M6,13H18V11H6M3,6V8H21V6M10,18H14V16H10V18Z",
+  check: "M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z",
   close: "M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z",
   tag: "M21.41 11.58L12.41 2.58A2 2 0 0 0 11 2H4A2 2 0 0 0 2 4V11A2 2 0 0 0 2.59 12.42L11.59 21.42A2 2 0 0 0 13 22A2 2 0 0 0 14.41 21.41L21.41 14.41A2 2 0 0 0 22 13A2 2 0 0 0 21.41 11.58M13 20L4 11V4H11L20 13M6.5 5A1.5 1.5 0 1 1 5 6.5A1.5 1.5 0 0 1 6.5 5Z",
 };
@@ -742,7 +743,7 @@ class MBLogbookCard extends HTMLElement {
   /** Trips after the label filter and the column filters. */
   get _shownTrips() {
     const f = this._labelFilter || "all";
-    const { route, dist, park } = this._cf.trips;
+    const { route, dist, park, sent } = this._cf.trips;
     const k = this._miles ? 1 / KM_PER_MI : 1;
     return this._trips.filter((t) => {
       if (f === "__none" ? t.label : f !== "all" && t.label !== f) return false;
@@ -753,6 +754,7 @@ class MBLogbookCard extends HTMLElement {
         if (d < lo || d >= hi) return false;
       }
       if (park && (park === "charged") !== !!t.park_charged) return false;
+      if (sent && (sent === "yes") !== !!t.expensed_ts) return false;
       return true;
     });
   }
@@ -789,6 +791,7 @@ class MBLogbookCard extends HTMLElement {
       ["route", "Place", "Any place", [...places.map((p) => [p, `To or from ${p}`]), ["__none", "Unnamed places"]]],
       ["dist", "Distance", "Any distance", DIST_BANDS.map(([v, l]) => [v, `${l} ${unit}`])],
       ["park", "Parked before", "Any park", [["charged", "Charged"], ["notcharged", "Not charged"]]],
+      ["sent", "Expenses", "Sent or not", [["no", "Not yet sent to expenses"], ["yes", "Sent to expenses"]]],
     ];
   }
 
@@ -851,15 +854,41 @@ class MBLogbookCard extends HTMLElement {
         <div class=tools>${fu.chips}
         ${this._filtering ? `<button class="btn quiet cfclear" title="Show all trips again">Clear</button>` : ""}
         ${fu.btn}
+        ${this._hass.user?.is_admin && f !== "all" && f !== "__none" && this._shownTrips.some((t) => !t.expensed_ts) ? `<button class="btn marksent" title="Once you've claimed them: marks the ${esc(f)} trips shown as sent to expenses">${icon("check")}Mark as sent</button>` : ""}
         <button class="btn csv" title="Download the trips shown, for mileage claims">${icon("download")}Export CSV</button></div>
       </div>${fu.panel}`;
+  }
+
+  /** A tick on a trip that has been sent to expenses. */
+  _sentChip(x) {
+    return x.expensed_ts ? `<span class="chip sent" title="Sent to expenses on ${this._date(x.expensed_ts)}">${icon("check")}sent</span>` : "";
+  }
+
+  /** "Sent to expenses on 3 Nov 2026. " for the questions asked before changing such a trip. */
+  _sentNote(t) {
+    return t?.expensed_ts ? `It was sent to expenses on ${this._date(t.expensed_ts)}. ` : "";
+  }
+
+  /** Mark trips as sent to expenses, or take the mark off, then reload with the filters kept. */
+  async _setSent(ids, sent) {
+    try {
+      await this._hass.callWS({ type: "mb_logbook/trips_expensed", trip_ids: ids, sent });
+    } catch (e) {
+      this._toast(`Couldn't save that: ${e.message || e.code || e}`);
+      return;
+    }
+    const keep = this._labelFilter;
+    await this._load();
+    this._labelFilter = keep;
+    this._render();
+    this._toast(sent ? `${ids.length} trip${ids.length === 1 ? "" : "s"} marked as sent to expenses` : "No longer marked as sent");
   }
 
   _exportCsv() {
     const unit = this._miles ? "mi" : "km";
     const k = this._miles ? 1 / KM_PER_MI : 1;
     const loc = this._hass.locale?.language;
-    const rows = [["Date", "Start time", "End time", "From", "To", `Distance (${unit})`, `Odometer start (${unit})`, `Odometer end (${unit})`, "Label", "Battery start %", "Battery end %", "Note"]];
+    const rows = [["Date", "Start time", "End time", "From", "To", `Distance (${unit})`, `Odometer start (${unit})`, `Odometer end (${unit})`, "Label", "Battery start %", "Battery end %", "Sent to expenses", "Note"]];
     for (const t of [...this._shownTrips].sort((a, b) => a.start_ts - b.start_ts)) {
       const s = new Date(t.start_ts * 1000);
       const e = new Date(t.end_ts * 1000);
@@ -875,6 +904,7 @@ class MBLogbookCard extends HTMLElement {
         t.label || "",
         t.soc_start ?? "",
         t.soc_end ?? "",
+        t.expensed_ts ? new Date(t.expensed_ts * 1000).toLocaleDateString(loc) : "",
         t.gap ? "Missed while Home Assistant was offline: distance from the odometer, time approximate" : "",
       ]);
     }
@@ -1007,7 +1037,7 @@ class MBLogbookCard extends HTMLElement {
         return `<tr class="trip ${open ? "open" : ""}" data-id="${x.id}">
             <td class=c-when>${this._when(x.start_ts)}<div class=dim>${x.gap ? `<span class=chip title="Driven while Home Assistant wasn't watching (offline, or the car's connection was down). The distance is from the odometer; the drive was some time between ${this._time(x.start_ts)} and ${this._time(x.end_ts)}, and there is no route. Several drives may be in one.">missed</span> by ${this._time(x.end_ts)}` : this._dur(x.end_ts - x.start_ts)}</div></td>
             <td class=c-route>${this._place(x.start_place, x.start_lat, "trip", x.id, "start", x.start_lon)} → ${this._place(x.end_place, x.end_lat, "trip", x.id, "end", x.end_lon)}</td>
-            <td class=c-label>${this._labelCell(x)}</td>
+            <td class=c-label>${this._labelCell(x)}${this._sentChip(x)}</td>
             <td class="n c-dist">${this._dist(x.distance_km)}</td>
             <td class="n c-x">${used}</td>
             <td class="n c-x">${kwh ? kwh.toFixed(1) + " kWh" : "–"}</td>
@@ -1015,7 +1045,7 @@ class MBLogbookCard extends HTMLElement {
             <td class="n c-x">${park}</td>
             <td class="n dim c-x">${x.point_count > 1 ? `<span title="Route recorded: click the row for the map">${icon("route")}</span>` : ""}</td>
             <td class=c-meta>${[used !== "–" && used, kwh && `${kwh.toFixed(1)} kWh`, kwh && this._eff(x.distance_km, kwh), park !== "–" && `parked ${park}`].filter(Boolean).join(" · ")}</td>
-          </tr>${open ? `<tr class=maprow><td colspan=9>${form}<div id=mapbox></div>${naming ? "" : this._tripFigures(x)}${this._hass.user?.is_admin && !naming ? `<div class=tripactions>${x.end_ts - x.start_ts >= 2400 ? `<button class="btn splittrip" data-id="${x.id}" title="For two drives logged as one: splits at the longest stop">Split at the stop</button>` : ""}<button class="btn mergetrip" data-id="${x.id}" title="For one drive logged as two: joins this trip with the one after it">Merge with next trip</button><button class="btn danger deltrip" data-id="${x.id}">Delete this trip</button></div>` : ""}</td></tr>` : ""}`;
+          </tr>${open ? `<tr class=maprow><td colspan=9>${form}<div id=mapbox></div>${naming ? "" : this._tripFigures(x)}${this._hass.user?.is_admin && !naming ? `<div class=tripactions><button class="btn sentone" data-id="${x.id}" data-sent="${x.expensed_ts ? 0 : 1}" title="${x.expensed_ts ? `Marked on ${this._date(x.expensed_ts)}` : "Once this trip is on an expenses claim"}">${x.expensed_ts ? "Not sent to expenses after all" : `${icon("check")}Sent to expenses`}</button>${x.end_ts - x.start_ts >= 2400 ? `<button class="btn splittrip" data-id="${x.id}" title="For two drives logged as one: splits at the longest stop">Split at the stop</button>` : ""}<button class="btn mergetrip" data-id="${x.id}" title="For one drive logged as two: joins this trip with the one after it">Merge with next trip</button><button class="btn danger deltrip" data-id="${x.id}">Delete this trip</button></div>` : ""}</td></tr>` : ""}`;
       })
       .join("");
   }
@@ -1294,11 +1324,26 @@ class MBLogbookCard extends HTMLElement {
     });
     root.querySelector("button.csv:not(.csvc)")?.addEventListener("click", () => this._exportCsv());
     root.querySelector("button.csvc")?.addEventListener("click", () => this._exportChargesCsv());
+    root.querySelector("button.marksent")?.addEventListener("click", async () => {
+      const todo = this._shownTrips.filter((t) => !t.expensed_ts);
+      const km = todo.reduce((sum, t) => sum + t.distance_km, 0);
+      const what = `${todo.length} ${this._labelFilter} trip${todo.length === 1 ? "" : "s"}`;
+      if (!(await this._ask({ title: "Mark as sent to expenses?", text: `${what} (${this._dist(km)}) in ${this._range().label} will be ticked as sent. You can take the tick off a trip again.`, ok: "Mark as sent" }))) return;
+      await this._setSent(todo.map((t) => t.id), true);
+    });
+    root.querySelectorAll("button.sentone").forEach((b) =>
+      b.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        this._setSent([Number(b.dataset.id)], b.dataset.sent === "1");
+      })
+    );
     root.querySelectorAll("select.tlabel").forEach((s) => {
       s.addEventListener("click", (ev) => ev.stopPropagation());
       s.addEventListener("change", async () => {
         const id = Number(s.dataset.id);
         let label = s.value;
+        const was = this._trips.find((x) => x.id === id);
+        if (was?.expensed_ts && !(await this._ask({ title: "Change a trip that's been sent?", text: `${this._sentNote(was)}Changing its label won't change what you claimed.`, ok: "Change it" }))) return this._render();
         if (label === "__other") {
           label = ((await this._ask({ title: "New label", text: "A label for this trip.", ok: "Use it", input: "e.g. Client visit" })) || "").slice(0, 30);
           if (!label) return this._render();
@@ -1320,7 +1365,8 @@ class MBLogbookCard extends HTMLElement {
     root.querySelectorAll("button.splittrip").forEach((b) =>
       b.addEventListener("click", async (ev) => {
         ev.stopPropagation();
-        if (!(await this._ask({ title: "Split this trip in two?", text: "It is split at its longest stop. Use this when two drives were logged as one.", ok: "Split" }))) return;
+        const sent = this._sentNote(this._trips.find((x) => x.id === Number(b.dataset.id)));
+        if (!(await this._ask({ title: "Split this trip in two?", text: `${sent}It is split at its longest stop. Use this when two drives were logged as one.${sent ? " Both halves stay marked as sent." : ""}`, ok: "Split" }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/split_trip", trip_id: Number(b.dataset.id) });
         } catch (e) {
@@ -1337,7 +1383,7 @@ class MBLogbookCard extends HTMLElement {
         const t = this._trips.find((x) => x.id === id);
         const next = t && [...this._trips].filter((x) => x.start_ts > t.start_ts).sort((a, c) => a.start_ts - c.start_ts)[0];
         const what = next ? `the ${this._when(next.start_ts)} trip (${this._dist(next.distance_km)})` : "the next trip";
-        if (!(await this._ask({ title: "Merge these trips?", text: `This trip is joined with ${what} into one.`, ok: "Merge" }))) return;
+        if (!(await this._ask({ title: "Merge these trips?", text: `${this._sentNote(t) || this._sentNote(next).replace("It was", "The next trip was")}This trip is joined with ${what} into one.${!!t?.expensed_ts !== !!next?.expensed_ts ? " Only one of the two was sent, so the merged trip won't be marked as sent." : ""}`, ok: "Merge" }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/merge_trips", trip_id: id });
         } catch (e) {
@@ -1352,7 +1398,7 @@ class MBLogbookCard extends HTMLElement {
         ev.stopPropagation();
         const t = this._trips.find((x) => x.id === Number(b.dataset.id));
         const what = t ? `${this._when(t.start_ts)}, ${this._dist(t.distance_km)}` : "this trip";
-        if (!(await this._ask({ title: "Delete this trip?", text: `The trip on ${what}. This can't be undone.`, ok: "Delete", danger: true }))) return;
+        if (!(await this._ask({ title: "Delete this trip?", text: `The trip on ${what}. ${this._sentNote(t)}This can't be undone.`, ok: "Delete", danger: true }))) return;
         try {
           await this._hass.callWS({ type: "mb_logbook/delete_trip", trip_id: Number(b.dataset.id) });
         } catch (e) {
@@ -1663,6 +1709,8 @@ MBLogbookCard.css = `
   .empty { text-align: center; color: var(--secondary-text-color); padding: 18px; }
   .badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 999px; background: var(--error-color, #db4437); color: #fff; font-size: .72em; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: middle; box-sizing: border-box; }
   .chip { font-size: .75em; padding: 1px 7px; border-radius: 999px; background: var(--secondary-background-color); color: var(--secondary-text-color); }
+  .chip.sent { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: var(--success-color, #43a047); background: color-mix(in srgb, var(--success-color, #43a047) 14%, transparent); white-space: nowrap; }
+  .chip.sent .ic { width: 13px; height: 13px; }
   .chip.live { background: var(--success-color, #43a047); color: #fff; }
   details.ignored { margin-top: 10px; }
   details.ignored summary { cursor: pointer; color: var(--secondary-text-color); font-size: .9em; }
@@ -1719,7 +1767,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.34.0";
+const CARD_VERSION = "0.35.0";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

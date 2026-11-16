@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS trip_labels (
     label TEXT NOT NULL,
     PRIMARY KEY (car, start_ts)
 );
+-- Trips already sent to expenses: keyed like trip_labels, with the time they were marked
+CREATE TABLE IF NOT EXISTS trip_expenses (
+    car TEXT NOT NULL,
+    start_ts INTEGER NOT NULL,
+    sent_ts REAL NOT NULL,
+    PRIMARY KEY (car, start_ts)
+);
 CREATE TABLE IF NOT EXISTS place_anchors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     place_id INTEGER NOT NULL,
@@ -471,6 +478,7 @@ class LogbookDB:
         )
         places = self.places()
         labels = self._labels(car)
+        sent = self._expensed(car)
         defaults = self.place_labels()
         out = []
         for r in rows:
@@ -486,6 +494,7 @@ class LogbookDB:
                 if auto:
                     d["label"] = auto
                     d["label_auto"] = True
+            d["expensed_ts"] = sent.get(round(d["start_ts"]))
             out.append(d)
         return out
 
@@ -597,6 +606,60 @@ class LogbookDB:
         else:
             self._exec("DELETE FROM trip_labels WHERE car = ? AND start_ts = ?", (car, ts))
         return True
+
+    # ----- sent to expenses ---------------------------------------------------------------
+    # A date per trip, kept apart from the trips table for the same reason as labels.
+
+    def _expensed(self, car: str) -> dict[int, float]:
+        return {
+            r["start_ts"]: r["sent_ts"]
+            for r in self._exec("SELECT start_ts, sent_ts FROM trip_expenses WHERE car = ?", (car,))
+        }
+
+    def set_trips_expensed(self, trip_ids: list[int], sent_ts: float | None) -> int:
+        """Mark trips as sent to expenses at ``sent_ts``, or clear the mark with None.
+
+        A trip already marked keeps its first date. Returns how many trips were found."""
+        found = 0
+        with self._lock:
+            assert self._conn is not None
+            with self._conn:
+                for trip_id in trip_ids:
+                    row = self._conn.execute(
+                        "SELECT car, start_ts FROM trips WHERE id = ?", (trip_id,)
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    found += 1
+                    key = (row["car"], round(row["start_ts"]))
+                    if sent_ts is None:
+                        self._conn.execute(
+                            "DELETE FROM trip_expenses WHERE car = ? AND start_ts = ?", key
+                        )
+                    else:
+                        self._conn.execute(
+                            "INSERT OR IGNORE INTO trip_expenses (car, start_ts, sent_ts) VALUES (?, ?, ?)",
+                            (*key, sent_ts),
+                        )
+        return found
+
+    def carry_expensed(self, car: str, old: list[float], new: list[float]) -> None:
+        """After a split or merge: the new trips are sent only if every old one was."""
+        marks = self._expensed(car)
+        was = [marks.get(round(ts)) for ts in old]
+        keep = min(was) if was and all(m is not None for m in was) else None
+        with self._lock:
+            assert self._conn is not None
+            with self._conn:
+                self._conn.executemany(
+                    "DELETE FROM trip_expenses WHERE car = ? AND start_ts = ?",
+                    [(car, round(ts)) for ts in old],
+                )
+                if keep is not None:
+                    self._conn.executemany(
+                        "INSERT OR REPLACE INTO trip_expenses (car, start_ts, sent_ts) VALUES (?, ?, ?)",
+                        [(car, round(ts), keep) for ts in new],
+                    )
 
     def label_names(self) -> list[str]:
         return [r["label"] for r in self._exec("SELECT DISTINCT label FROM trip_labels ORDER BY label")]

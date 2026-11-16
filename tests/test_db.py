@@ -118,6 +118,29 @@ def test_trips_get_place_names_labels_and_place_defaults(db):
     assert not db.set_trip_label(9999, "x")
 
 
+def test_sent_to_expenses_marks_keep_their_first_date_and_clear(db):
+    db.add_trip(trip())
+    [t] = db.trips("c1", 0, 1e12)
+    assert t["expensed_ts"] is None
+    assert db.set_trips_expensed([t["id"], 9999], 1000.0) == 1
+    assert db.set_trips_expensed([t["id"]], 2000.0) == 1  # already sent: the first date stays
+    assert db.trips("c1", 0, 1e12)[0]["expensed_ts"] == 1000.0
+    assert db.set_trips_expensed([t["id"]], None) == 1
+    assert db.trips("c1", 0, 1e12)[0]["expensed_ts"] is None
+    assert db.set_trips_expensed([9999], 1000.0) == 0
+
+
+def test_sent_mark_follows_a_split_and_needs_both_halves_of_a_merge(db):
+    db._exec("INSERT INTO trip_expenses (car, start_ts, sent_ts) VALUES ('c1', 100, 5.0)")
+    db.carry_expensed("c1", [100.2], [100.2, 900.0])  # split: both legs stay sent
+    assert db._expensed("c1") == {100: 5.0, 900: 5.0}
+    db._exec("UPDATE trip_expenses SET sent_ts = 9.0 WHERE start_ts = 900")
+    db.carry_expensed("c1", [100.2, 900.0], [100.2])  # merge of two sent trips: earliest date
+    assert db._expensed("c1") == {100: 5.0}
+    db.carry_expensed("c1", [100.2, 900.0], [100.2])  # merge with an unsent trip: not sent
+    assert db._expensed("c1") == {}
+
+
 def test_renaming_a_place_carries_its_rates_and_default_label(db):
     pid = db.save_place({"name": "Gym", "lat": 1, "lon": 1, "radius_m": 50})
     db.save_rate({"location": "Gym", "valid_from": 0, "rate": 0.5})
