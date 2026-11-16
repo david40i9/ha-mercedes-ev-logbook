@@ -116,7 +116,7 @@ Any car that provides these entities works, not only Mercedes. Pick them yoursel
 
 ## Using it
 
-**Sidebar page.** *Overview* shows this month against last; mileage by label for any week, month, 3 months or year; 12-month charts of distance, energy, charging cost and efficiency; battery health; efficiency against outside temperature; this month's routes; your most-visited places; and a heat map of where you go. *Logbook* is the full card for the selected car.
+**Sidebar page.** *Overview* leads with Business distance for the month and the tax year, and how much is not yet sent to expenses; then shows this month against last; mileage by label for any week, month, 3 months or year; 12-month charts of distance, energy, charging cost and efficiency; battery health; efficiency against outside temperature; this month's routes; your most-visited places; and a heat map of where you go. *Logbook* is the full card for the selected car.
 
 **Trips.** Click a trip to see its route. Choose a label from the dropdown, or give a place a default label (Places tab) and trips there are labelled automatically. Press **Filter** to narrow the list by place, distance, or charged or not, and to change the sort order, or use the label buttons; the totals follow, and **Export CSV** saves the trips shown. Once trips are on an expenses claim, choose their label and press **Mark as sent** (or open one trip and press **Sent to expenses**): they get a green *sent* tick, **Filter** can show only the ones not yet sent, and the CSV has the date in a *Sent to expenses* column. On a phone each trip is a stacked block with the distance in large figures. The Charging tab filters the same way, by place (or home / away) and how each charge was costed.
 

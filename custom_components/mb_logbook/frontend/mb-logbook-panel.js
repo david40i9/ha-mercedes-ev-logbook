@@ -13,6 +13,7 @@ const PICONS = {
   car: "M5,11L6.5,6.5H17.5L19,11M17.5,16A1.5,1.5 0 0,1 16,14.5A1.5,1.5 0 0,1 17.5,13A1.5,1.5 0 0,1 19,14.5A1.5,1.5 0 0,1 17.5,16M6.5,16A1.5,1.5 0 0,1 5,14.5A1.5,1.5 0 0,1 6.5,13A1.5,1.5 0 0,1 8,14.5A1.5,1.5 0 0,1 6.5,16M18.92,6C18.72,5.42 18.16,5 17.5,5H6.5C5.84,5 5.28,5.42 5.08,6L3,12V20A1,1 0 0,0 4,21H5A1,1 0 0,0 6,20V19H18V20A1,1 0 0,0 19,21H20A1,1 0 0,0 21,20V12L18.92,6Z",
   distance: "M6.5,8.11C5.61,8.11 4.89,7.39 4.89,6.5A1.61,1.61 0 0,1 6.5,4.89C7.39,4.89 8.11,5.61 8.11,6.5V6.5A1.61,1.61 0 0,1 6.5,8.11M6.5,2C4,2 2,4 2,6.5C2,9.87 6.5,14.86 6.5,14.86C6.5,14.86 11,9.87 11,6.5C11,4 9,2 6.5,2M17.5,8.11A1.61,1.61 0 0,1 15.89,6.5C15.89,5.61 16.61,4.89 17.5,4.89C18.39,4.89 19.11,5.61 19.11,6.5A1.61,1.61 0 0,1 17.5,8.11M17.5,2C15,2 13,4 13,6.5C13,9.87 17.5,14.86 17.5,14.86C17.5,14.86 22,9.87 22,6.5C22,4 20,2 17.5,2M17.5,16C16.23,16 15.1,16.8 14.68,18H9.32C8.77,16.44 7.05,15.62 5.5,16.17C3.93,16.72 3.11,18.44 3.66,20C4.22,21.56 5.93,22.38 7.5,21.83C8.35,21.53 9,20.85 9.32,20H14.69C15.24,21.56 16.96,22.38 18.5,21.83C20.08,21.28 20.9,19.56 20.35,18C19.92,16.8 18.78,16 17.5,16V16M17.5,20.5A1.5,1.5 0 0,1 16,19A1.5,1.5 0 0,1 17.5,17.5A1.5,1.5 0 0,1 19,19A1.5,1.5 0 0,1 17.5,20.5Z",
   bolt: "M11 15H6L13 1V9H18L11 23V15Z",
+  check: "M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z",
   eff: "M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z",
   station: "M19.77,7.23L19.78,7.22L16.06,3.5L15,4.56L17.11,6.67C16.17,7.03 15.5,7.93 15.5,9A2.5,2.5 0 0,0 18,11.5C18.36,11.5 18.69,11.42 19,11.29V18.5A1,1 0 0,1 18,19.5A1,1 0 0,1 17,18.5V14A2,2 0 0,0 15,12H14V5A2,2 0 0,0 12,3H6A2,2 0 0,0 4,5V21H14V13.5H15.5V18.5A2.5,2.5 0 0,0 18,21A2.5,2.5 0 0,0 20.5,18.5V9C20.5,8.31 20.22,7.68 19.77,7.23M18,10A1,1 0 0,1 17,9A1,1 0 0,1 18,8A1,1 0 0,1 19,9A1,1 0 0,1 18,10M8,18V13.5H6L10,6V11H12L8,18Z",
   cash: "M5,6H23V18H5V6M14,9A3,3 0 0,1 17,12A3,3 0 0,1 14,15A3,3 0 0,1 11,12A3,3 0 0,1 14,9M9,8A2,2 0 0,1 7,10V14A2,2 0 0,1 9,16H19A2,2 0 0,1 21,14V10A2,2 0 0,1 19,8H9M1,10H3V20H19V22H1V10Z",
@@ -214,16 +215,17 @@ class MBLogbookPanel extends HTMLElement {
     };
     const eff = (m) => this._eff(m.km_with_kwh, m.kwh_used);
     const drain = (m) => (m.idle_hours ? (m.idle_drop / m.idle_hours) * 24 : null);
-    const tile = (i, k, v, d = "") => `<div class=tile><div class=k>${picon(i)}${k}</div><div class=v>${v}</div>${d}</div>`;
+    // The figure is what reads first: its unit sits small beside it.
+    const tile = (i, k, v, d = "", u = "") => `<div class=tile><div class=k>${picon(i)}${k}</div><div class=v>${v}${u ? `<small>${u}</small>` : ""}</div>${d}</div>`;
     const tiles = [
       tile("car", "Trips", cur.trips, delta(cur.trips, prev?.trips, (x) => x)),
-      tile("distance", "Distance", `${this._d(cur.distance_km)} ${this._du}`, delta(cur.distance_km, prev?.distance_km, (x) => `${this._d(x)} ${this._du}`)),
-      tile("bolt", "Energy used", `${cur.kwh_used.toFixed(0)} kWh`, delta(cur.kwh_used, prev?.kwh_used, (x) => `${x.toFixed(0)} kWh`)),
+      tile("distance", "Distance", this._d(cur.distance_km), delta(cur.distance_km, prev?.distance_km, (x) => `${this._d(x)} ${this._du}`), this._du),
+      tile("bolt", "Energy used", cur.kwh_used.toFixed(0), delta(cur.kwh_used, prev?.kwh_used, (x) => `${x.toFixed(0)} kWh`), "kWh"),
       // mi/kWh: higher is better; kWh/100km: lower is better.
-      tile("eff", "Efficiency", eff(cur) ? `${eff(cur).toFixed(2)} ${this._effUnit}` : "–", prev && eff(prev) && eff(cur) ? delta(eff(cur), eff(prev), (x) => x.toFixed(2), this._miles ? 1 : -1) : ""),
-      tile("station", "Charged", `${cur.charged_kwh.toFixed(0)} kWh`, delta(cur.charged_kwh, prev?.charged_kwh, (x) => `${x.toFixed(0)} kWh`)),
+      tile("eff", "Efficiency", eff(cur) ? eff(cur).toFixed(2) : "–", prev && eff(prev) && eff(cur) ? delta(eff(cur), eff(prev), (x) => x.toFixed(2), this._miles ? 1 : -1) : "", eff(cur) ? this._effUnit : ""),
+      tile("station", "Charged", cur.charged_kwh.toFixed(0), delta(cur.charged_kwh, prev?.charged_kwh, (x) => `${x.toFixed(0)} kWh`), "kWh"),
       tile("cash", "Charging cost", this._money(cur.cost), delta(cur.cost, prev?.cost, (x) => this._money(x))),
-      tile("drain", "Idle drain", drain(cur) != null ? `${drain(cur).toFixed(2)} %/day` : "–"),
+      tile("drain", "Idle drain", drain(cur) != null ? drain(cur).toFixed(2) : "–", "", drain(cur) != null ? "%/day" : ""),
     ].join("");
 
     const labels = months.map((m) => this._monthName(m.month).slice(0, 3));
@@ -251,18 +253,143 @@ class MBLogbookPanel extends HTMLElement {
       : `<div class=dim>No named destinations yet.</div>`;
 
     box.innerHTML = `
-      <div class=section><h2>${this._monthName(cur.month, true)} so far</h2><div class=tiles>${tiles}</div></div>
+      <div id=business></div>
+      <div class=section data-fold=month><h2>${this._monthName(cur.month, true)} so far</h2><div class=tiles>${tiles}</div></div>
       <div class=section id=mileage></div>
       <div class=grid>${charts}</div>
       <div class=grid2>
-        <div class=section><h2>Routes this month <span class=dim>(${routes.length} trips)</span></h2><div id=mapbox></div></div>
-        <div class=section><h2>Most visited <span class=dim>(last 12 months)</span></h2>${top}</div>
+        <div class=section data-fold=routes><h2>Routes this month <span class=dim>(${routes.length} trips)</span></h2><div id=mapbox></div></div>
+        <div class=section data-fold=visited><h2>Most visited <span class=dim>(last 12 months)</span></h2>${top}</div>
       </div>
       <div class=section id=heat></div>`;
+    this._folds(box);
+    this._loadBusiness();
     this._loadMileage();
     this._loadHeat();
     this._loadTempEff();
     this._drawRoutes(routes);
+  }
+
+  // ----- folding sections ------------------------------------------------------------
+
+  /** The sections the user has folded away, remembered in this browser. */
+  _folded() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem("mbl.folded") || "[]"));
+    } catch (e) {
+      return new Set();
+    }
+  }
+
+  /**
+   * Make every section's heading fold it. Sections are redrawn piece by piece as their
+   * figures arrive, so this watches the page and marks each heading as it appears.
+   */
+  _folds(box) {
+    const key = (sec) => sec.dataset.fold || sec.id || sec.querySelector("h2")?.textContent.split(/[(:]/)[0].trim() || "";
+    const mark = () => {
+      const folded = this._folded();
+      box.querySelectorAll(":scope > .section, :scope > .grid > .section, :scope > .grid2 > .section").forEach((sec) => {
+        const h = sec.querySelector("h2");
+        if (!h || !key(sec)) return;
+        const shut = folded.has(key(sec));
+        sec.classList.toggle("folded", shut);
+        if (h.getAttribute("role") !== "button") {
+          h.setAttribute("role", "button");
+          h.tabIndex = 0;
+        }
+        h.setAttribute("aria-expanded", String(!shut));
+      });
+    };
+    const toggle = (h) => {
+      const sec = h.closest(".section");
+      if (!sec || !h.hasAttribute("aria-expanded") || sec.querySelector("h2") !== h) return;
+      const folded = this._folded();
+      folded.has(key(sec)) ? folded.delete(key(sec)) : folded.add(key(sec));
+      try {
+        localStorage.setItem("mbl.folded", JSON.stringify([...folded]));
+      } catch (e) {
+        /* private window: it folds for now, and isn't remembered */
+        sec.classList.toggle("folded");
+        h.setAttribute("aria-expanded", String(!sec.classList.contains("folded")));
+        return;
+      }
+      mark();
+    };
+    this._foldWatch?.disconnect();
+    this._foldWatch = new MutationObserver(mark);
+    this._foldWatch.observe(box, { childList: true, subtree: true });
+    box.onclick = (e) => {
+      const h = e.target.closest?.("h2");
+      if (h) toggle(h);
+    };
+    box.onkeydown = (e) => {
+      if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("h2[role=button]")) {
+        e.preventDefault();
+        toggle(e.target);
+      }
+    };
+    mark();
+  }
+
+  // ----- business mileage ------------------------------------------------------------
+
+  /**
+   * The year a mileage claim runs over: the UK tax year (from 6 April) when Home Assistant
+   * is set to the United Kingdom, else the calendar year. {start (seconds), name, since}.
+   */
+  _claimYear() {
+    const now = new Date();
+    if (this._hass.config?.country === "GB") {
+      const y = now >= new Date(now.getFullYear(), 3, 6) ? now.getFullYear() : now.getFullYear() - 1;
+      return { start: new Date(y, 3, 6).getTime() / 1000, name: "This tax year", since: `since 6 April ${y}` };
+    }
+    return { start: new Date(now.getFullYear(), 0, 1).getTime() / 1000, name: "This year", since: `since 1 January` };
+  }
+
+  /**
+   * The card that leads the page: Business distance this month and this (tax) year, and how
+   * much of the year is not yet sent to expenses. That last line only shows once some trip
+   * has been marked as sent, so it stays out of the way of anyone who doesn't use the mark.
+   */
+  async _loadBusiness() {
+    const box = this.shadowRoot.getElementById("business");
+    if (!box) return;
+    const car = this._car;
+    const now = new Date();
+    const year = this._claimYear();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000;
+    // A year back at least, to see whether the sent mark is in use at all.
+    const from = Math.min(year.start, new Date(now.getFullYear() - 1, now.getMonth(), 1).getTime() / 1000);
+    let trips;
+    try {
+      trips = await this._hass.callWS({ type: "mb_logbook/trips", entry_id: car.entry_id, start: from, end: Date.now() / 1000 + 86400 });
+    } catch (e) {
+      return; // the rest of the page still shows
+    }
+    if (this._car !== car || !box.isConnected) return;
+    const inUse = trips.some((t) => t.expensed_ts != null);
+    const biz = trips.filter((t) => t.label === "Business" && t.start_ts >= year.start);
+    const month = biz.filter((t) => t.start_ts >= monthStart);
+    const unsent = biz.filter((t) => t.expensed_ts == null);
+    const km = (list) => list.reduce((a, t) => a + t.distance_km, 0);
+    const n = (list) => `${list.length} trip${list.length === 1 ? "" : "s"}`;
+    const monthName = now.toLocaleDateString(this._hass.locale?.language, { month: "long" });
+    const sent = !inUse || !biz.length
+      ? ""
+      : unsent.length
+        ? `<div class="bsent todo"><b>${this._d(km(unsent), 1)} ${this._du}</b> not yet sent to expenses <span>${n(unsent)}, ${year.since}</span></div>`
+        : `<div class="bsent done">${picon("check")}All sent to expenses <span>${year.since}</span></div>`;
+    box.innerHTML = `<button class=bcard title="Open the logbook">
+        <div class=bk><i class=dot></i>Business${picon("right")}</div>
+        <div class=bfigs>
+          <div><div class=bv data-count="${this._d(km(month), 1)}">${this._d(km(month), 1)}<small>${this._du}</small></div><div class=bn>${escp(monthName)} so far · ${n(month)}</div></div>
+          <div><div class="bv second">${this._d(km(biz), 1)}<small>${this._du}</small></div><div class=bn>${year.name} · ${n(biz)}</div></div>
+        </div>${sent}</button>`;
+    box.querySelector(".bcard").addEventListener("click", () => {
+      this._view = "logbook";
+      this._render();
+    });
   }
 
   /** Calendar period `offset` periods back: {start, end (seconds), label}. Same as the card. */
@@ -351,15 +478,24 @@ class MBLogbookPanel extends HTMLElement {
     const order = [...groups.keys()].sort((a, b) => (a === "Business" ? -1 : b === "Business" ? 1 : !a ? 1 : !b ? -1 : a.localeCompare(b)));
     if (!groups.has("Business")) order.unshift("Business");
     const totalKm = trips.reduce((s, t) => s + t.distance_km, 0);
-    const tiles = order
+    // One bar cut into the labels' colours, then a line for each: the split reads at a glance.
+    const colour = (k) => `var(--mbl-c${LABEL_SLOTS[k] || 0})`;
+    const split = totalKm
+      ? `<div class=split role=img aria-label="Distance by label">${order
+          .filter((k) => groups.get(k)?.km)
+          .map((k) => `<i style="flex:${groups.get(k).km};background:${colour(k)}" title="${escp(k || "Unlabelled")}"></i>`)
+          .join("")}</div>`
+      : "";
+    const rows = order
       .map((k) => {
         const g = groups.get(k) || { trips: 0, km: 0, auto: 0 };
-        const name = k || "Unlabelled";
-        return `<div class="tile ${k === "Business" ? "biz" : ""}"><div class=k><i class=dot style="background:var(--mbl-c${LABEL_SLOTS[k] || 0})"></i>${escp(name)}</div><div class=v>${this._d(g.km, 1)} ${this._du}</div>
-          <div class=delta>${g.trips} trip${g.trips === 1 ? "" : "s"}${g.auto ? ` · ${g.auto} from place defaults` : ""}</div></div>`;
+        return `<div class="lrow ${k === "Business" ? "biz" : ""}"><i class=dot style="background:${colour(k)}"></i><span class=ln>${escp(k || "Unlabelled")}</span>
+          <span class=lt>${g.trips} trip${g.trips === 1 ? "" : "s"}${g.auto ? `<span class=auto> · ${g.auto} from place defaults</span>` : ""}</span>
+          <span class=lp>${totalKm ? Math.round((g.km / totalKm) * 100) : 0}%</span><b>${this._d(g.km, 1)}<small>${this._du}</small></b></div>`;
       })
       .join("");
-    box.innerHTML = `${head}<div class=tiles>${tiles}<div class=tile><div class=k>All trips</div><div class=v>${this._d(totalKm, 1)} ${this._du}</div><div class=delta>${trips.length} trips</div></div></div>
+    box.innerHTML = `${head}${split}<div class=lrows>${rows}
+        <div class="lrow all"><i class=dot style="background:none"></i><span class=ln>All trips</span><span class=lt>${trips.length} trip${trips.length === 1 ? "" : "s"}</span><span class=lp></span><b>${this._d(totalKm, 1)}<small>${this._du}</small></b></div></div>
       <div class=mchart>${chart}</div>
       <div class=dim style="margin-top:8px">Label trips (or give places a default label) in the Logbook tab; export them as CSV from there.</div>`;
     this._wireMileage(box);
@@ -716,7 +852,50 @@ MBLogbookPanel.css = `
   /* Figures */
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
   .tile { background: var(--secondary-background-color); border-radius: var(--mbl-r-box); padding: 10px 12px; min-width: 0; }
-  .tile.biz { box-shadow: inset 0 0 0 2px var(--mbl-c1); }
+  .v small, .lrow small, .bv small { font-size: .55em; font-weight: 500; color: var(--secondary-text-color); margin-left: 4px; }
+
+  /* Business card */
+  #business:empty { display: none; }
+  .bcard { display: block; width: 100%; text-align: left; margin-bottom: 16px; padding: 14px 16px 16px; color: inherit; border-radius: var(--ha-card-border-radius, 12px);
+    border: 1px solid color-mix(in srgb, var(--mbl-c1) 45%, var(--mbl-line)); background: color-mix(in srgb, var(--mbl-c1) 16%, var(--card-background-color)); }
+  .bcard:hover { background: color-mix(in srgb, var(--mbl-c1) 22%, var(--card-background-color)); }
+  .bk { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--secondary-text-color); }
+  .bk .dot { background: var(--mbl-c1); }
+  .bk .ic { margin-left: auto; width: 20px; height: 20px; }
+  .bfigs { display: flex; flex-wrap: wrap; gap: 6px 40px; margin-top: 6px; }
+  .bv { font-size: 2.5em; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bv small { font-size: .4em; }
+  .bv.second { font-size: 1.6em; line-height: 1.8; }
+  .bv.second small { font-size: .55em; }
+  .bn { color: var(--secondary-text-color); font-size: .9em; }
+  .bsent { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 12px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--mbl-c1) 30%, var(--mbl-line)); }
+  .bsent span { color: var(--secondary-text-color); font-size: .9em; margin-left: 4px; }
+  .bsent.todo b { color: var(--warning-color, #ffa600); font-variant-numeric: tabular-nums; }
+  .bsent.done { color: var(--success-color, #43a047); font-weight: 500; }
+
+  /* Mileage by label: one split bar and a line per label */
+  .split { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; margin-bottom: 10px; }
+  .split i { min-width: 3px; }
+  .lrow { display: flex; align-items: baseline; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--mbl-line); font-variant-numeric: tabular-nums; }
+  .lrow .dot { align-self: center; }
+  .lrow .ln { font-weight: 500; white-space: nowrap; }
+  .lrow .lt { flex: 1; min-width: 0; color: var(--secondary-text-color); font-size: .85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .lp { color: var(--secondary-text-color); font-size: .85em; width: 3em; text-align: right; }
+  .lrow b { min-width: 5.5em; text-align: right; white-space: nowrap; }
+  .lrow.biz b { font-size: 1.15em; }
+  .lrow.all { border-bottom: 0; color: var(--secondary-text-color); }
+  @media (max-width: 600px) { .lrow .auto { display: none; } }
+
+  /* Sections fold away from their heading */
+  h2[role=button] { cursor: pointer; display: flex; align-items: baseline; gap: 6px; user-select: none; }
+  h2[role=button]::after { content: ""; flex: none; align-self: center; margin-left: auto; width: 7px; height: 7px; border: solid var(--secondary-text-color); border-width: 0 2px 2px 0; transform: translateY(-2px) rotate(45deg); transition: transform .15s; }
+  .mhead h2[role=button]::after { margin-left: 8px; }
+  .mhead h2[role=button] { flex: 1; justify-content: flex-start; }
+  .section.folded h2[role=button]::after { transform: translateY(1px) rotate(-45deg); }
+  .section.folded { padding-bottom: 16px; }
+  .section.folded > :not(h2):not(.mhead), .section.folded > .mhead > :not(h2) { display: none; }
+  .section.folded > h2, .section.folded > .mhead, .section.folded > .mhead h2 { margin-bottom: 0; }
+  @media (prefers-reduced-motion: reduce) { h2[role=button]::after { transition: none; } }
   .k { display: flex; align-items: center; gap: 6px; font-size: .8em; color: var(--secondary-text-color); white-space: nowrap; }
   .k .ic { color: var(--primary-color); }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
