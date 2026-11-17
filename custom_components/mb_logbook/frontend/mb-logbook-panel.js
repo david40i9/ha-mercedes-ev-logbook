@@ -404,10 +404,26 @@ class MBLogbookPanel extends HTMLElement {
           <div><div class=bv data-count="${this._d(km(month), 1)}">${this._d(km(month), 1)}<small>${this._du}</small></div><div class=bn>${escp(monthName)} so far · ${n(month)}</div></div>
           <div><div class="bv second">${this._d(km(biz), 1)}<small>${this._du}</small></div><div class=bn>${year.name} · ${n(biz)}</div></div>
         </div>${sent}</button>`;
+    this._countUp(box.querySelector(".bv[data-count]"));
     box.querySelector(".bcard").addEventListener("click", () => {
       this._view = "logbook";
       this._render();
     });
+  }
+
+  /** Count a figure up to its value over half a second (not for people who ask for less motion). */
+  _countUp(el) {
+    const to = Number(el?.dataset.count);
+    if (!el || !to || !el.firstChild || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const digits = (el.dataset.count.split(".")[1] || "").length;
+    const t0 = performance.now();
+    const step = (now) => {
+      if (!el.isConnected) return;
+      const f = Math.min(1, (now - t0) / 550);
+      el.firstChild.textContent = (to * (1 - (1 - f) ** 3)).toFixed(digits);
+      if (f < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   /** Calendar period `offset` periods back: {start, end (seconds), label}. Same as the card. */
@@ -995,6 +1011,14 @@ MBLogbookPanel.css = `
   .sk-h { width: 160px; height: 20px; margin-bottom: 14px; }
   .sk-tile { height: 74px; border-radius: var(--mbl-r-box); }
   .sk-chart { height: 190px; margin-top: 12px; }
+  /* Bars rise and the split bar fills when a chart first appears. */
+  .chart .bar { transform-origin: bottom; animation: mbl-rise .5s cubic-bezier(.2, .7, .2, 1) backwards; }
+  .chart .val { animation: mbl-fade .3s .35s backwards; }
+  .split i { animation: mbl-fill .5s cubic-bezier(.2, .7, .2, 1) backwards; transform-origin: left; }
+  @keyframes mbl-rise { from { transform: scaleY(0); } }
+  @keyframes mbl-fill { from { transform: scaleX(0); } }
+  @keyframes mbl-fade { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .chart .bar, .chart .val, .split i { animation: none; } }
   @keyframes mbl-sk { from { background-position: 100% 0; } to { background-position: 0 0; } }
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;

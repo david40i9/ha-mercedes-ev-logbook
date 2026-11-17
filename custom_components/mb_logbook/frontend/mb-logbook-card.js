@@ -159,7 +159,9 @@ class MBLogbookCard extends HTMLElement {
     await this._load();
   }
 
-  async _load() {
+  /** keepOpen: a change made on an opened trip leaves it open, with its map, where it was. */
+  async _load(keepOpen = false) {
+    const wasOpen = keepOpen ? this._open : null;
     if (!this._car) {
       this._error = "No cars set up yet.";
       this._render();
@@ -185,10 +187,11 @@ class MBLogbookCard extends HTMLElement {
     this._trips = trips;
     this._charges = charges;
     this._places = places;
-    this._open = null;
+    this._open = wasOpen != null && trips.some((t) => t.id === wasOpen) ? wasOpen : null;
     this._naming = null;
     this._edit = null;
     this._render();
+    if (this._open != null) this._showMap(this._open);
   }
 
   /** Places tab: named places and HA zones in one table, each with its default trip label. */
@@ -878,9 +881,10 @@ class MBLogbookCard extends HTMLElement {
       return;
     }
     const keep = this._labelFilter;
-    await this._load();
+    await this._load(true);
     this._labelFilter = keep;
     this._render();
+    if (this._open != null) this._showMap(this._open);
     this._toast(sent ? `${ids.length} trip${ids.length === 1 ? "" : "s"} marked as sent to expenses` : "No longer marked as sent");
   }
 
@@ -1379,9 +1383,10 @@ class MBLogbookCard extends HTMLElement {
         if (label && !this._labels.includes(label)) this._labels.push(label);
         // Reload: clearing a trip's own label brings back its place's default.
         const keep = { filter: this._labelFilter };
-        await this._load();
+        await this._load(true);
         this._labelFilter = keep.filter;
         this._render();
+        if (this._open != null) this._showMap(this._open);
       });
     });
     root.querySelectorAll("button.splittrip").forEach((b) =>
