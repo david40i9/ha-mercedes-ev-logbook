@@ -8,6 +8,7 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 2. **Off-peak share and saving**: how much home charging fell in the off-peak window, and what it would have cost at the peak rate. Uses the off-peak rates from the Charging tab or the live price recorded per session. *(evcc's cheapest-slot planning, turned into a report.)*
 3. **Day-by-day timeline** of trips and stops (the heat map part is done). *(TeslaMate "visited" dashboard.)*
 4. **Charging curve** for rapid charges: store power samples during a session and plot power against battery %. *(TeslaMate charge detail.)* Needs more frequent data than the car may send.
+5. **Month names the same on every chart**: with the UK language the Business mileage chart says "Sept" (the browser's own short month name for en-GB), while the Distance, Energy and Charging cost charts say "Sep". Use one fixed short form everywhere. *(Spotted on Dave's dashboard, 17 Nov 2026.)*
 
 ## Not planned
 
