@@ -25,7 +25,7 @@ Every drive, park and charge of your EQA, EQB, EQE, EQS, EQV, electric CLA or ot
 It reads your car from René's integration and never talks to Mercedes itself. Everything stays on your Home Assistant.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/overview.png" alt="The Mercedes EV Logbook overview page: monthly figures, mileage by label, and charts">
+  <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/overview.png" alt="The Mercedes EV Logbook overview page: Business distance first, then monthly figures, mileage by label, and charts">
 </p>
 
 > *Screenshots use made-up demo data.*
@@ -48,6 +48,10 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 ## Screenshots
 
+**On a phone:** the Overview leads with Business distance, trips read as a timeline under day headings in each label's colour, and every charge shows how far the battery filled.
+
+<img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/phone.png" alt="Overview, Trips and Charging on a phone">
+
 **Trips:** labels (picked or automatic from the place), charges shown between trips, sortable columns and CSV export.
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/trips.png" alt="Trips tab">
@@ -60,7 +64,7 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/heatmap.png" alt="Heat map of stops on the overview page (demo data)">
 
-**Charging:** sessions with energy, peak power and cost, and charging rates per place (here Home with an off-peak window) with their history.
+**Charging:** sessions with a battery bar, AC or DC, energy, peak power and cost, and charging rates per place (here Home with an off-peak window) with their history.
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/charging.png" alt="Charging tab">
 
