@@ -25,7 +25,7 @@ Every drive, park and charge of your EQA, EQB, EQE, EQS, EQV, electric CLA or ot
 It reads your car from René's integration and never talks to Mercedes itself. Everything stays on your Home Assistant.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/overview.png" alt="The Mercedes EV Logbook overview page: monthly figures, mileage by label, and charts">
+  <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/overview.png" alt="The Mercedes EV Logbook overview page: Business distance first, then monthly figures, mileage by label, and charts">
 </p>
 
 > *Screenshots use made-up demo data.*
@@ -48,6 +48,10 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 ## Screenshots
 
+**On a phone:** the Overview leads with Business distance, trips read as a timeline under day headings in each label's colour, and every charge shows how far the battery filled.
+
+<img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/phone.png" alt="Overview, Trips and Charging on a phone">
+
 **Trips:** labels (picked or automatic from the place), charges shown between trips, sortable columns and CSV export.
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/trips.png" alt="Trips tab">
@@ -60,7 +64,7 @@ It reads your car from René's integration and never talks to Mercedes itself. E
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/heatmap.png" alt="Heat map of stops on the overview page (demo data)">
 
-**Charging:** sessions with energy, peak power and cost, and charging rates per place (here Home with an off-peak window) with their history.
+**Charging:** sessions with a battery bar, AC or DC, energy, peak power and cost, and charging rates per place (here Home with an off-peak window) with their history.
 
 <img src="https://raw.githubusercontent.com/david40i9/ha-mercedes-ev-logbook/main/docs/images/charging.png" alt="Charging tab">
 
@@ -116,7 +120,7 @@ Any car that provides these entities works, not only Mercedes. Pick them yoursel
 
 ## Using it
 
-**Sidebar page.** *Overview* shows this month against last; mileage by label for any week, month, 3 months or year; 12-month charts of distance, energy, charging cost and efficiency; battery health; efficiency against outside temperature; this month's routes; your most-visited places; and a heat map of where you go. *Logbook* is the full card for the selected car.
+**Sidebar page.** *Overview* leads with Business distance for the month and the tax year, and how much is not yet sent to expenses; then shows this month against last; mileage by label for any week, month, 3 months or year; 12-month charts of distance, energy, charging cost and efficiency; battery health; efficiency against outside temperature; this month's routes; your most-visited places; and a heat map of where you go. *Logbook* is the full card for the selected car.
 
 **Trips.** Click a trip to see its route. Choose a label from the dropdown, or give a place a default label (Places tab) and trips there are labelled automatically. Press **Filter** to narrow the list by place, distance, or charged or not, and to change the sort order, or use the label buttons; the totals follow, and **Export CSV** saves the trips shown. Once trips are on an expenses claim, choose their label and press **Mark as sent** (or open one trip and press **Sent to expenses**): they get a green *sent* tick, **Filter** can show only the ones not yet sent, and the CSV has the date in a *Sent to expenses* column. On a phone each trip is a stacked block with the distance in large figures. The Charging tab filters the same way, by place (or home / away) and how each charge was costed.
 
