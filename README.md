@@ -183,9 +183,27 @@ Distance comes from the car's 0.1-resolution "distance since start" counter, che
 Data is stored in `config/mb_logbook.db` (SQLite), which is included in Home Assistant backups.
 </details>
 
+## External connections
+
+The integration itself makes **one** outside connection, and only when you ask for it. It never talks to Mercedes, and it sends no analytics or usage data anywhere.
+
+| Connection | When | What is sent | Why |
+|---|---|---|---|
+| [Photon](https://photon.komoot.io) (OpenStreetMap data, run by Komoot) | Only when you press **Suggest names** while naming a place | The one point you are naming and the search radius, with a `User-Agent` naming this integration and its version | To list shops and venues near that point, so you can pick a name |
+| [Overpass API](https://overpass-api.de) (OpenStreetMap data) | Only if Photon fails during that same lookup | The same point and radius | A fallback for the same lookup |
+
+No car, trip, account or Home Assistant data goes with a lookup. If you never press **Suggest names**, the integration makes no outside connections at all.
+
+Things that connect out but are not this integration:
+
+- **Your car's data** comes from René's [mbapi2020](https://github.com/ReneNulschDE/mbapi2020) integration, which is what talks to Mercedes. This integration only reads the entities it creates in Home Assistant.
+- **Route and heat maps** use Home Assistant's own map component, so the tiles come from wherever your Home Assistant gets its map tiles (since 2026.9, its [Map tiles](https://www.home-assistant.io/integrations/map_tiles/) integration, from the OpenStreetMap Foundation's servers).
+- **Outside temperature** is read from a Home Assistant entity (your weather integration by default). This integration doesn't fetch the weather itself.
+- **Installing and updating** downloads the files from GitHub, through HACS or by hand.
+
 ## Privacy
 
-Everything stays in Home Assistant. Places are named from your own zones and the places you name. The one exception is optional: **Suggest names** sends the single point you are naming to OpenStreetMap's Photon service (falling back to the Overpass API), only when you press it. Route maps use Home Assistant's own map component and tiles.
+Everything stays in Home Assistant. Places are named from your own zones and the places you name, apart from the optional lookup above.
 
 Everyone with a login to your Home Assistant can open the logbook page and see trips, routes and charges. Only administrators can change or delete anything.
 
