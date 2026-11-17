@@ -218,8 +218,8 @@ class MBLogbookCard extends HTMLElement {
         const home = r.is_home ? " <span class=chip>home</span>" : "";
         const p = r.place;
         if (!p)
-          return `<tr class=place><td class=c-route>${esc(r.name)}${home}</td><td class=c-label>${labelCell(r)}</td><td class="dim c-x">HA zone</td><td class="n c-x">${r.uses}</td><td class=c-x></td>
-            <td class=c-meta>Home Assistant zone · ${r.uses} trip end${r.uses === 1 ? "" : "s"} and charges</td></tr>`;
+          return `<tr class=place><td class=c-route><span class=vb><b>${r.uses}</b>stop${r.uses === 1 ? "" : "s"}</span>${esc(r.name)}${home}</td><td class=c-label>${labelCell(r)}</td><td class="dim c-x">HA zone</td><td class="n c-x">${r.uses}</td><td class=c-x></td>
+            <td class=c-meta>Home Assistant zone</td></tr>`;
         const opts = [...new Set([...radii, Math.round(p.radius_m)])]
           .sort((a, b) => a - b)
           .map((x) => `<option value="${x}" ${x === Math.round(p.radius_m) ? "selected" : ""}>${x < 1000 ? x + " m" : x / 1000 + " km"}</option>`)
@@ -240,12 +240,12 @@ class MBLogbookCard extends HTMLElement {
               <div class=dim>Drag the pin to move this place or the circle's edge to resize it, then press Save.</div>` : ""}
               <div id=mapbox class=small></div></td></tr>`;
         return `<tr class="place${editing ? " open" : ""}" data-place="${p.id}">
-          <td class=c-route>${esc(p.name)}${home}</td>
+          <td class=c-route><span class=vb><b>${p.uses}</b>stop${p.uses === 1 ? "" : "s"}</span>${esc(p.name)}${home}</td>
           <td class=c-label>${labelCell(r)}</td>
           <td class=c-x>${size(p.radius_m)}</td>
           <td class="n c-x">${p.uses}</td>
           <td class="n acts c-dist"><button class="btn sm pmap">${editing ? "Close" : admin ? "Edit" : "Map"}</button></td>
-          <td class=c-meta>${size(p.radius_m)} · ${p.uses} trip end${p.uses === 1 ? "" : "s"} and charges</td>
+          <td class=c-meta>${size(p.radius_m)} circle</td>
         </tr>${editor}`;
       })
       .join("");
@@ -268,9 +268,9 @@ class MBLogbookCard extends HTMLElement {
     const rows = list
       .map((u, i) => {
         const naming = this._naming?.kind === "unnamed" && this._naming.id === i;
-        return `<tr class=unnamed><td class=c-route>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
+        return `<tr class=unnamed><td class=c-route><span class=vb><b>${u.visits}</b>stop${u.visits === 1 ? "" : "s"}</span><span class=un>${unnamedLabel(u)}<div class=dim>${where(u)}</div></span></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
             <td class="n acts c-dist">${admin ? `<button class="btn sm ${naming ? "" : "primary "}nameit" data-kind=unnamed data-id="${i}">${naming ? "Naming…" : "Name it"}</button><button class="btn sm quiet ignore" data-id="${i}" title="It doesn't need a name: stop asking">Ignore</button>` : ""}</td>
-            <td class=c-meta>${u.visits} stop${u.visits === 1 ? "" : "s"} · last ${this._date(u.last_ts)}</td></tr>
+            <td class=c-meta>last ${this._date(u.last_ts)}</td></tr>
           ${naming ? `<tr class=maprow><td colspan=4>${this._nameForm(u.lat, u.lon)}<div id=mapbox class=small></div></td></tr>` : ""}`;
       })
       .join("");
@@ -283,9 +283,9 @@ class MBLogbookCard extends HTMLElement {
       ? `<details class=ignored${this._showIgnored ? " open" : ""}><summary>Ignored places (${ignored.length})</summary>
       <table class=cards><thead><tr><th>Place</th><th class=n>Stops</th><th>Last</th><th></th></tr></thead><tbody>${ignored
         .map(
-          (u) => `<tr class=unnamed><td class=c-route>${unnamedLabel(u)}<div class=dim>${where(u)}</div></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
+          (u) => `<tr class=unnamed><td class=c-route><span class=vb><b>${u.visits}</b>stop${u.visits === 1 ? "" : "s"}</span><span class=un>${unnamedLabel(u)}<div class=dim>${where(u)}</div></span></td><td class="n c-x">${u.visits}</td><td class=c-x>${this._date(u.last_ts)}</td>
             <td class="n acts c-dist">${admin ? `<button class="btn sm nameit" data-unignore="${u.ignored_id}" title="Ask for a name again">Restore</button>` : ""}</td>
-            <td class=c-meta>${u.visits} stop${u.visits === 1 ? "" : "s"} · last ${this._date(u.last_ts)}</td></tr>`
+            <td class=c-meta>last ${this._date(u.last_ts)}</td></tr>`
         )
         .join("")}</tbody></table></details>`
       : "";
@@ -1016,8 +1016,20 @@ class MBLogbookCard extends HTMLElement {
           ...trips.map((x) => ({ ts: x.start_ts, trip: x })),
           ...(this._filtering ? [] : this._charges).map((c) => ({ ts: c.start_ts, charge: c })),
         ].sort((a, b) => b.ts - a.ts);
+    // In time order the trips sit under a heading for each day, with the day's distance.
+    const loc = this._hass.locale?.language || undefined;
+    const dayOf = (ts) => new Date(ts * 1000).toLocaleDateString(loc, { weekday: "short", day: "numeric", month: "short" });
+    const dayKm = new Map();
+    if (!this._sort.trips) for (const t of trips) dayKm.set(dayOf(t.start_ts), (dayKm.get(dayOf(t.start_ts)) || 0) + t.distance_km);
+    let lastDay = null;
     return items
       .map(({ trip: x, charge }) => {
+        let dayRow = "";
+        if (!this._sort.trips && x) {
+          const day = dayOf(x.start_ts);
+          if (day !== lastDay) dayRow = `<tr class=day><td colspan=9><span>${day}</span><b>${this._dist(dayKm.get(day))}</b></td></tr>`;
+          lastDay = day;
+        }
         if (charge) return this._chargeLine(charge);
         const kwh = this._kwh(x);
         const used = x.soc_start != null && x.soc_end != null ? `${x.soc_start}→${x.soc_end}%` : "–";
@@ -1034,9 +1046,10 @@ class MBLogbookCard extends HTMLElement {
         const form = naming
           ? this._nameForm(naming.end === "start" ? x.start_lat : x.end_lat, naming.end === "start" ? x.start_lon : x.end_lon)
           : "";
-        return `<tr class="trip ${open ? "open" : ""}" data-id="${x.id}">
-            <td class=c-when>${this._when(x.start_ts)}<div class=dim>${x.gap ? `<span class=chip title="Driven while Home Assistant wasn't watching (offline, or the car's connection was down). The distance is from the odometer; the drive was some time between ${this._time(x.start_ts)} and ${this._time(x.end_ts)}, and there is no route. Several drives may be in one.">missed</span> by ${this._time(x.end_ts)}` : this._dur(x.end_ts - x.start_ts)}</div></td>
-            <td class=c-route>${this._place(x.start_place, x.start_lat, "trip", x.id, "start", x.start_lon)} → ${this._place(x.end_place, x.end_lat, "trip", x.id, "end", x.end_lon)}</td>
+        const mf = (k, v) => (v ? `<span class=mf><i>${k}</i>${v}</span>` : "");
+        return `${dayRow}<tr class="trip ${open ? "open" : ""}" data-id="${x.id}" style="--lc:var(--mbl-c${this._slot(x.label)})">
+            <td class=c-when><span class=wd>${dayOf(x.start_ts)}, </span>${this._time(x.start_ts)}<div class=dim>${x.gap ? `<span class=chip title="Driven while Home Assistant wasn't watching (offline, or the car's connection was down). The distance is from the odometer; the drive was some time between ${this._time(x.start_ts)} and ${this._time(x.end_ts)}, and there is no route. Several drives may be in one.">missed</span> by ${this._time(x.end_ts)}` : this._dur(x.end_ts - x.start_ts)}</div></td>
+            <td class=c-route><span class=rt><span class=rp>${this._place(x.start_place, x.start_lat, "trip", x.id, "start", x.start_lon)}</span><span class=ra> → </span><span class=rp>${this._place(x.end_place, x.end_lat, "trip", x.id, "end", x.end_lon)}</span></span></td>
             <td class=c-label>${this._labelCell(x)}${this._sentChip(x)}</td>
             <td class="n c-dist">${this._dist(x.distance_km)}</td>
             <td class="n c-x">${used}</td>
@@ -1044,7 +1057,7 @@ class MBLogbookCard extends HTMLElement {
             <td class="n c-x">${this._eff(x.distance_km, kwh)}</td>
             <td class="n c-x">${park}</td>
             <td class="n dim c-x">${x.point_count > 1 ? `<span title="Route recorded: click the row for the map">${icon("route")}</span>` : ""}</td>
-            <td class=c-meta>${[used !== "–" && used, kwh && `${kwh.toFixed(1)} kWh`, kwh && this._eff(x.distance_km, kwh), park !== "–" && `parked ${park}`].filter(Boolean).join(" · ")}</td>
+            <td class=c-meta>${mf("Battery", used !== "–" && used)}${mf("Energy", kwh && `${kwh.toFixed(1)} kWh`)}${mf("Efficiency", kwh && this._eff(x.distance_km, kwh))}${mf("Parked", park !== "–" && park)}</td>
           </tr>${open ? `<tr class=maprow><td colspan=9>${form}<div id=mapbox></div>${naming ? "" : this._tripFigures(x)}${this._hass.user?.is_admin && !naming ? `<div class=tripactions><button class="btn sentone" data-id="${x.id}" data-sent="${x.expensed_ts ? 0 : 1}" title="${x.expensed_ts ? `Marked on ${this._date(x.expensed_ts)}` : "Once this trip is on an expenses claim"}">${x.expensed_ts ? "Not sent to expenses after all" : `${icon("check")}Sent to expenses`}</button>${x.end_ts - x.start_ts >= 2400 ? `<button class="btn splittrip" data-id="${x.id}" title="For two drives logged as one: splits at the longest stop">Split at the stop</button>` : ""}<button class="btn mergetrip" data-id="${x.id}" title="For one drive logged as two: joins this trip with the one after it">Merge with next trip</button><button class="btn danger deltrip" data-id="${x.id}">Delete this trip</button></div>` : ""}</td></tr>` : ""}`;
       })
       .join("");
@@ -1098,6 +1111,15 @@ class MBLogbookCard extends HTMLElement {
           : "";
         const basis = { meter: "metered", power: "live price", rate: "place rate", free: "free" }[c.cost_source] || (c.cost == null ? "no rate" : "");
         const per = c.cost_source === "rate" || c.cost_source === "free" ? this._money(c.rate, true) : c.kwh && c.cost ? this._money(c.cost / c.kwh, true) : "";
+        // AC or DC: from the car's plug sensors, else told from the peak power (25 kW and over is DC).
+        const plug = /^(ac|dc)$/i.test(c.connector || "") ? c.connector.toUpperCase() : c.max_power_kw ? (c.max_power_kw >= 25 ? "DC" : "AC") : "";
+        const badge = plug ? ` <span class="chip plug ${plug.toLowerCase()}">${plug}</span>` : "";
+        // The battery as a bar: what was there before (faint), then what the charge added.
+        const pc = (v) => Math.max(0, Math.min(100, v));
+        const bbar =
+          c.soc_start != null && c.soc_end != null
+            ? `<div class=bbar role=img aria-label="Battery ${c.soc_start}% to ${c.soc_end}%"><i style="width:${pc(c.soc_start)}%"></i><i class=add style="width:${pc(c.soc_end - c.soc_start)}%"></i></div>`
+            : "";
         const meta = [
           `${c.soc_start ?? "–"}→${c.soc_end ?? "–"}%`,
           c.max_power_kw ? `${c.max_power_kw.toFixed(1)} kW${c.connector ? " " + esc(c.connector) : ""}` : null,
@@ -1107,13 +1129,13 @@ class MBLogbookCard extends HTMLElement {
         ].filter(Boolean).join(" · ");
         return `<tr class=charge>
           <td class=c-when>${this._when(c.start_ts)}<div class=dim>${this._dur(c.end_ts - c.start_ts)}</div>${this._plugged(c)}</td>
-          <td class=c-route>${this._place(c.place, c.lat, "charge", c.id, undefined, c.lon)}${c.at_home ? " <span class=chip>home</span>" : ""}</td>
-          <td class="n c-x">${c.soc_start ?? "–"}→${c.soc_end ?? "–"}%</td>
+          <td class=c-route>${this._place(c.place, c.lat, "charge", c.id, undefined, c.lon)}${c.at_home ? " <span class=chip>home</span>" : ""}${badge}</td>
+          <td class="n c-x">${c.soc_start ?? "–"}→${c.soc_end ?? "–"}%${bbar}</td>
           <td class="n c-label">${kwh != null ? kwh.toFixed(1) + " kWh" : "–"}<div class=dim>${src}</div></td>
           <td class="n c-x">${c.max_power_kw ? c.max_power_kw.toFixed(1) + " kW" : "–"}${c.connector ? `<div class=dim>${esc(c.connector)}</div>` : ""}</td>
           <td class="n c-dist">${c.cost == null ? `<span class=dim>no rate</span>` : this._money(c.cost)}<div class=dim>${c.cost == null ? "" : basis}</div></td>
           <td class="n c-x">${per}</td>
-          <td class=c-meta>${meta}</td>
+          <td class=c-meta>${bbar}${meta}</td>
         </tr>${formRow}`;
       })
       .join("");
@@ -1549,9 +1571,12 @@ class MBLogbookCard extends HTMLElement {
     }
     points = points.filter((p) => p[1] != null && p[2] != null);
     const paths = [];
+    // The route in its label's colour, read out as a plain value for the map.
+    const slot = this._slot(trip.label);
+    const lc = slot ? getComputedStyle(this).getPropertyValue(`--mbl-c${slot}`).trim() : "";
     if (points.length >= 2)
       paths.push({
-        color: "var(--primary-color)",
+        color: lc || "var(--primary-color)",
         gradualOpacity: 0,
         fullDatetime: false,
         name: `${this._time(trip.start_ts)} → ${this._time(trip.end_ts)}`,
@@ -1729,7 +1754,12 @@ MBLogbookCard.css = `
   /* A narrow card (a phone, or a narrow dashboard column): each trip and each charge
    * becomes a stacked block and the column headings go. Sorting moves to the Filter panel. */
   .wrap { container: mbl / inline-size; }
-  .c-meta { display: none; }
+  .c-meta, tr.day, .vb { display: none; }
+  .chip.plug { font-weight: 600; letter-spacing: .03em; }
+  .chip.plug.dc { color: var(--primary-text-color); background: color-mix(in srgb, var(--warning-color, #ffa600) 30%, transparent); }
+  .bbar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; margin-top: 4px; min-width: 70px; background: color-mix(in srgb, var(--primary-text-color) 12%, transparent); }
+  .bbar i { background: color-mix(in srgb, var(--success-color, #43a047) 40%, transparent); }
+  .bbar i.add { background: var(--success-color, #43a047); }
   @container mbl (max-width: 700px) {
     table.cards, table.cards > tbody { display: block; }
     table.cards > thead { display: none; }
@@ -1744,6 +1774,27 @@ MBLogbookCard.css = `
     table.cards .c-label { grid-area: label; justify-self: end; }
     table.cards .c-dist { grid-area: dist; justify-self: end; font-size: 1.25em; font-weight: 600; }
     table.cards .c-meta { display: block; grid-area: meta; font-size: .85em; color: var(--secondary-text-color); }
+    /* A trip as a short timeline: from above to, joined in its label's colour. */
+    table.cards tr.trip .rt { position: relative; display: block; padding-left: 22px; }
+    table.cards tr.trip .ra { display: none; }
+    table.cards tr.trip .rp { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+    table.cards tr.trip .rp::before { content: ""; position: absolute; left: 0; width: 10px; height: 10px; margin-top: .45em; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--lc); background: var(--card-background-color); z-index: 1; }
+    table.cards tr.trip .rp:last-child::before { background: var(--lc); }
+    table.cards tr.trip .rt::before { content: ""; position: absolute; left: 4px; top: 1em; bottom: 1em; width: 2px; background: color-mix(in srgb, var(--lc) 55%, transparent); }
+    table.cards tr.trip .c-when, table.cards tr.trip .c-meta { padding-left: 22px; }
+    table.cards tr.trip .c-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+    .mf { color: var(--primary-text-color); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .mf i { display: block; font-style: normal; font-size: .85em; color: var(--secondary-text-color); }
+    /* Day headings, which stay at the top while that day's trips scroll under them. */
+    table.cards tr.day { display: block; position: sticky; top: var(--mbl-sticky-top, var(--header-height, 0px)); z-index: 2; background: var(--card-background-color, var(--primary-background-color)); }
+    table.cards tr.day td { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 4px 6px; font-size: .9em; font-weight: 600; color: var(--primary-color); font-variant-numeric: tabular-nums; }
+    table.cards tr.day ~ tr.trip .wd { display: none; }
+    table.cards tr.charge .bbar { margin: 0 0 5px; }
+    /* Places lead with how often the car stops there. */
+    table.cards tr:is(.place, .unnamed) .c-route { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .vb { display: flex; flex-direction: column; align-items: center; flex: none; min-width: 40px; padding: 3px 6px; border-radius: var(--mbl-r, 8px); background: var(--secondary-background-color); font-size: .7em; font-weight: 400; color: var(--secondary-text-color); line-height: 1.25; }
+    .vb b { font-size: 1.5em; font-weight: 600; color: var(--primary-text-color); font-variant-numeric: tabular-nums; }
+    table.cards tr:is(.place, .unnamed) .c-meta { padding-left: 62px; margin-top: -4px; }
     table.cards tr.charge .c-label { font-size: .9em; color: var(--secondary-text-color); }
     table.cards tr.charge :is(.c-label, .c-dist) div { display: none; }
     table.cards tr.chargeline td { padding: 7px 8px; }
@@ -1752,7 +1803,7 @@ MBLogbookCard.css = `
     table.cards tr:is(.place, .unnamed, .rate) { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "route dist" "meta label"; gap: 6px 12px; align-items: center; padding: 11px 4px; }
     table.cards tr:is(.place, .unnamed, .rate) .c-dist { font-size: inherit; font-weight: inherit; }
     table.cards tr.rate .c-meta2 { grid-area: meta; font-size: .9em; }
-    table.cards tr.unnamed { grid-template-areas: "route route" "meta dist"; }
+    table.cards tr.unnamed { grid-template-areas: "route route" "meta dist"; gap: 2px 12px; padding: 9px 4px 6px; }
     .pform .pdel { margin-left: 0; }
     .tripactions { justify-content: flex-start; }
     .stepper .range { min-width: 0; padding: 0 6px; }

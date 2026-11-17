@@ -139,6 +139,12 @@ class MBLogbookPanel extends HTMLElement {
       <div class=toolbar><span id=menu></span><div class=apptitle>Mercedes EV Logbook${this._car ? ` · ${escp(this._car.name)}` : ""}</div>${cars}${views}</div>
       <div class=content id=content>${this._car ? "" : `<div class=empty>No cars set up yet. Add one under Settings → Devices &amp; services → Mercedes EV Logbook.</div>`}</div>`;
 
+    // The card's day headings stick just under this toolbar, however tall it wraps.
+    const bar = root.querySelector(".toolbar");
+    this._barWatch?.disconnect();
+    this._barWatch = new ResizeObserver(() => this.style.setProperty("--mbl-sticky-top", `${bar.offsetHeight}px`));
+    this._barWatch.observe(bar);
+
     this._menu = document.createElement("ha-menu-button");
     this._menu.hass = this._hass;
     this._menu.narrow = this._narrow;
@@ -190,10 +196,14 @@ class MBLogbookPanel extends HTMLElement {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000;
     let stats;
     let routes;
+    let monthTrips;
     try {
-      [stats, routes] = await Promise.all([
+      // The month's trips and the label list only colour the routes, so they may fail quietly.
+      [stats, routes, monthTrips, this._labels] = await Promise.all([
         this._hass.callWS({ type: "mb_logbook/stats", entry_id: car.entry_id, months: 12 }),
         this._hass.callWS({ type: "mb_logbook/routes", entry_id: car.entry_id, start: monthStart }),
+        this._hass.callWS({ type: "mb_logbook/trips", entry_id: car.entry_id, start: monthStart }).catch(() => []),
+        this._hass.callWS({ type: "mb_logbook/labels" }).catch(() => []),
       ]);
     } catch (e) {
       box.innerHTML = `<div class=empty>Couldn't load the figures: ${escp(e.message || e.code || e)}</div>`;
@@ -258,7 +268,7 @@ class MBLogbookPanel extends HTMLElement {
       <div class=section id=mileage></div>
       <div class=grid>${charts}</div>
       <div class=grid2>
-        <div class=section data-fold=routes><h2>Routes this month <span class=dim>(${routes.length} trips)</span></h2><div id=mapbox></div></div>
+        <div class=section data-fold=routes><h2>Routes this month <span class=dim>(${routes.length} trips)</span></h2><div id=mapbox></div><div class=legend id=mapkey></div></div>
         <div class=section data-fold=visited><h2>Most visited <span class=dim>(last 12 months)</span></h2>${top}</div>
       </div>
       <div class=section id=heat></div>`;
@@ -267,7 +277,15 @@ class MBLogbookPanel extends HTMLElement {
     this._loadMileage();
     this._loadHeat();
     this._loadTempEff();
-    this._drawRoutes(routes);
+    this._drawRoutes(routes, monthTrips);
+  }
+
+  /** The palette slot of a label, as on the card: three fixed, then the rest in list order. */
+  _slot(label) {
+    if (!label) return 0;
+    if (LABEL_SLOTS[label]) return LABEL_SLOTS[label];
+    const i = (this._labels || []).filter((l) => !LABEL_SLOTS[l]).indexOf(label);
+    return i >= 0 && i < 5 ? i + 4 : 0;
   }
 
   // ----- folding sections ------------------------------------------------------------
@@ -757,13 +775,29 @@ class MBLogbookPanel extends HTMLElement {
     return map;
   }
 
-  async _drawRoutes(routes) {
+  async _drawRoutes(routes, trips = []) {
     const box = this.shadowRoot.getElementById("mapbox");
     if (!box) return;
-    const paths = routes
-      .filter((r) => r.points.length >= 2)
+    // Each route in its trip label's colour, so the map shows where Business took the car.
+    // The map draws outside this page's styles, so the colours are read out as plain values.
+    const css = getComputedStyle(this);
+    const hex = (slot) => css.getPropertyValue(slot ? `--mbl-c${slot}` : "--secondary-text-color").trim() || "#8a93a0";
+    const byId = new Map(trips.map((t) => [t.id, t]));
+    const labelled = trips.some((t) => t.label);
+    const shown = routes.filter((r) => r.points.length >= 2);
+    const key = this.shadowRoot.getElementById("mapkey");
+    if (key && labelled) {
+      const km = new Map();
+      for (const r of shown) {
+        const t = byId.get(r.id);
+        if (t) km.set(t.label || "", (km.get(t.label || "") || 0) + t.distance_km);
+      }
+      const order = [...km.keys()].sort((a, b) => (a === "Business" ? -1 : b === "Business" ? 1 : !a ? 1 : !b ? -1 : a.localeCompare(b)));
+      key.innerHTML = order.map((k) => `<span><i style="background:${hex(this._slot(k))}"></i>${escp(k || "Unlabelled")} <b>${this._d(km.get(k))} ${this._du}</b></span>`).join("");
+    }
+    const paths = shown
       .map((r, i) => ({
-        color: ROUTE_COLOURS[i % ROUTE_COLOURS.length],
+        color: labelled ? hex(this._slot(byId.get(r.id)?.label)) : ROUTE_COLOURS[i % ROUTE_COLOURS.length],
         gradualOpacity: 0,
         fullDatetime: false,
         points: r.points
@@ -939,6 +973,13 @@ MBLogbookPanel.css = `
   @media (max-width: 600px) { .chart .wide { display: none; } .chart .narrow { display: inline; } .chart .xl span, .chart .val, .chart .val.now { font-size: 10px; } .chart .plot, .chart .xl { margin-left: 32px; } }
   .legend { display: flex; gap: 14px; font-size: .8em; color: var(--secondary-text-color); margin: -6px 0 8px; }
   #mapbox { height: 380px; border-radius: var(--mbl-r-box); overflow: hidden; }
+  /* With nothing to draw, the map's space closes up to one line. */
+  #mapbox:has(> .empty), #heatbox:has(> .empty) { height: auto; }
+  #mapbox > .empty, #heatbox > .empty { padding: 14px; }
+  #mapkey { flex-wrap: wrap; margin: 10px 0 0; gap: 4px 16px; }
+  #mapkey:empty { display: none; }
+  #mapkey i { border-radius: 50%; }
+  #mapkey b { color: var(--primary-text-color); font-weight: 500; font-variant-numeric: tabular-nums; }
   #heatbox { height: 460px; border-radius: var(--mbl-r-box); overflow: hidden; }
   #heatbox ha-map { display: block; height: 100%; }
   #mapbox ha-map { display: block; height: 100%; }
