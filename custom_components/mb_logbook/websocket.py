@@ -648,14 +648,19 @@ async def ws_place_save(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
     db = hass.data[DOMAIN]["db"]
     place_id = msg.get("place_id")
     linked_existing = False
-    if place_id is None:
+    existing = await hass.async_add_executor_job(db.places)
+    same = next(
+        (p for p in existing if p["name"].casefold() == msg["name"].casefold() and p["id"] != place_id), None
+    )
+    if same is not None and place_id is None and "anchor_lat" in msg:
         # Naming a stop with a name already in use links it to that place
         # instead of making a second place with the same name.
-        existing = await hass.async_add_executor_job(db.places)
-        same = next((p for p in existing if p["name"].casefold() == msg["name"].casefold()), None)
-        if same is not None and "anchor_lat" in msg:
-            place_id = same["id"]
-            linked_existing = True
+        place_id = same["id"]
+        linked_existing = True
+    elif same is not None:
+        # Two places with one name would share (and overwrite) its default label and rates.
+        connection.send_error(msg["id"], "name_taken", f"Another place is already called {same['name']}")
+        return
     if not linked_existing:
         place = {
             "id": place_id,

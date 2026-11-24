@@ -145,6 +145,19 @@ async def test_naming_a_stop_with_an_existing_name_links_it(ha, car, ws):
     assert (await ws("place_save", name="Far", lat=91, lon=1, radius_m=100))["success"] is False
 
 
+async def test_a_place_cant_take_a_name_already_in_use(ha, car, ws):
+    gym = (await ws("place_save", name="Gym", lat=52.2, lon=-1.2, radius_m=100))["result"]["id"]
+    other = (await ws("place_save", name="Gym 2", lat=52.3, lon=-1.3, radius_m=100))["result"]["id"]
+    await ws("place_label_set", location="Gym", label="Personal")
+    clash = await ws("place_save", place_id=other, name="gym", lat=52.3, lon=-1.3, radius_m=100)
+    assert clash["error"]["code"] == "name_taken"
+    assert (await ws("place_save", name="GYM", lat=52.4, lon=-1.4, radius_m=100))["error"]["code"] == "name_taken"
+    labels = {r["location"]: r["label"] for r in (await ws("place_labels"))["result"]}
+    assert labels["Gym"] == "Personal"
+    # Moving or resizing a place keeps its own name.
+    assert (await ws("place_save", place_id=gym, name="Gym", lat=52.21, lon=-1.2, radius_m=150))["success"]
+
+
 async def test_merge_and_split(ha, car, ws, advance):
     await drive(ha, advance, km=10)
     await advance(minutes=30)

@@ -56,6 +56,16 @@ async def test_mbapi2020_device_prefills_sensors_and_battery(ha):
     assert "EQS 450+" in flow["description_placeholders"]["model_note"]
 
 
+async def test_options_need_a_battery_capacity(ha):
+    entry = await add_car(ha)
+    flow = await ha.config_entries.options.async_init(entry.entry_id)
+    flow = await ha.config_entries.options.async_configure(
+        flow["flow_id"], {**BASE_CONF, "battery_capacity_kwh": 0}
+    )
+    assert flow["type"] is FlowResultType.FORM and flow["errors"] == {"battery_capacity_kwh": "capacity_required"}
+    assert entry.runtime_data.conf["battery_capacity_kwh"] == 100
+
+
 async def test_options_rename_the_car_and_reload(ha):
     entry = await add_car(ha)
     flow = await ha.config_entries.options.async_init(entry.entry_id)

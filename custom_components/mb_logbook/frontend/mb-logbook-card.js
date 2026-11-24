@@ -950,7 +950,9 @@ class MBLogbookCard extends HTMLElement {
 
   /** Save rows as a CSV named after the car, what it holds and the period. */
   _download(rows, what) {
-    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    // A cell starting with = + @ (or - before a non-number) runs as a formula in a spreadsheet.
+    const safe = (v) => (/^([=+@\t\r]|-(?![\d.]))/.test(v) ? `'${v}` : v);
+    const q = (v) => `"${safe(String(v ?? "")).replace(/"/g, '""')}"`;
     const csv = rows.map((r) => r.map(q).join(",")).join("\r\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
@@ -1298,7 +1300,12 @@ class MBLogbookCard extends HTMLElement {
     root.querySelectorAll("button.ratedel").forEach((b) =>
       b.addEventListener("click", async () => {
         if (!(await this._ask({ title: "Delete this rate?", text: "Charges it covered will use the rate before it (or none).", ok: "Delete", danger: true }))) return;
-        await this._hass.callWS({ type: "mb_logbook/rate_delete", rate_id: Number(b.dataset.rate) });
+        try {
+          await this._hass.callWS({ type: "mb_logbook/rate_delete", rate_id: Number(b.dataset.rate) });
+        } catch (e) {
+          this._toast(`Couldn't delete the rate: ${e.message || e.code || e}`);
+          return;
+        }
         const keep = this._openRate;
         await this._load();
         this._openRate = keep;
@@ -1823,7 +1830,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.36.2";
+const CARD_VERSION = "0.36.3";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

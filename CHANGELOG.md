@@ -2,6 +2,19 @@
 
 What changed in each release, in plain words. The newest is at the top.
 
+## 0.36.3 (24 November 2026)
+
+Small fixes. Nothing to change in your setup: update and reload the page.
+
+- **Two places can't share a name.** Renaming a place to a name another place already has used to overwrite that place's default trip type and merge their charging rates without a word. It's now refused with "Another place is already called …".
+- **A free charge shows a cost of 0.** The Last charge cost sensor showed "unknown" after a charge that cost nothing.
+- **Configure won't accept a battery size of 0.** Saving the settings with the battery size empty hid every kWh and efficiency figure. It now asks for the size, as setup does.
+- **A rate delete that fails says so.** Before, the button did nothing visible.
+- **Exported CSVs are safe to open in a spreadsheet.** A place or label starting with = + - or @ could run as a formula in Excel or Google Sheets. Such cells now start with an apostrophe.
+- **The Import history description is clearer.** It now says that re-running it undoes splits, merges, deletions and filled-in missed trips in that period.
+- **Month names match on every chart.** The Business mileage chart said "Sept" with UK English while the others said "Sep". All charts now use three letters.
+- **Safer releases.** The step that builds the download HACS installs now uses a fixed, checked version of the tool it relies on.
+
 ## 0.36.2 (24 November 2026)
 
 Fixes for figures that could come out wrong without any warning. Nothing to change in your setup: update and reload the page.
