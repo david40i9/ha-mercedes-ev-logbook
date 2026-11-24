@@ -63,3 +63,4 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 - [x] Charges show a battery bar (what was there, what was added) and an AC or DC badge; places lead with how often the car stops there (0.36.0)
 - [x] Routes on the Overview map and a trip's own map are drawn in the trip label's colour, with a key; a map with nothing to show closes up to one line (0.36.0)
 - [x] Small motion: the Business figure counts up and chart bars rise, both off under "reduce motion"; changing a label or the sent mark on an opened trip leaves it open (0.36.0)
+- [x] Restore on an ignored place works again: the spot now goes in `spot_id`, as `id` is the websocket message's own number (0.36.1)
