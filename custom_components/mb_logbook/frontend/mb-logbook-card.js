@@ -1453,7 +1453,7 @@ class MBLogbookCard extends HTMLElement {
       b.addEventListener("click", async (ev) => {
         ev.stopPropagation();
         try {
-          await this._hass.callWS({ type: "mb_logbook/place_unignore", id: Number(b.dataset.unignore) });
+          await this._hass.callWS({ type: "mb_logbook/place_unignore", spot_id: Number(b.dataset.unignore) });
         } catch (e) {
           this._toast(`Couldn't restore the place: ${e.message || e.code || e}`);
           return;
@@ -1823,7 +1823,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.36.0";
+const CARD_VERSION = "0.36.1";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);

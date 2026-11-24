@@ -331,12 +331,16 @@ async def ws_place_ignore(hass: HomeAssistant, connection, msg: dict[str, Any]) 
 
 
 @websocket_api.require_admin
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/place_unignore", vol.Required("id"): int})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/place_unignore", vol.Required("spot_id"): int})
 @websocket_api.async_response
 async def ws_place_unignore(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
-    """Put an ignored place back on the "needs a name" list."""
+    """Put an ignored place back on the "needs a name" list.
+
+    The spot is ``spot_id``: ``id`` is the websocket message's own number, which the
+    client sets itself, so it can't carry the spot (it did before 0.36.1, and the
+    wrong spot, usually none, was deleted)."""
     db = hass.data[DOMAIN]["db"]
-    await hass.async_add_executor_job(db.unignore_spot, msg["id"])
+    await hass.async_add_executor_job(db.unignore_spot, msg["spot_id"])
     connection.send_result(msg["id"], {"ok": True})
 
 

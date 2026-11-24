@@ -75,7 +75,11 @@ async def test_labels_and_place_defaults(ha, car, ws, advance):
     sid = (await ws("place_ignore", lat=52.0, lon=-1.0))["result"]["id"]
     assert (await ws("ignored_places"))["success"]
     assert not (await ws("place_ignore", lat=95, lon=0))["success"]
-    assert (await ws("place_unignore", id=sid))["success"]
+    db = ha.data["mb_logbook"]["db"]
+    assert [s["id"] for s in db.ignored_spots()] == [sid]
+    # The spot goes in spot_id: the message's own id is the client's to number.
+    assert (await ws("place_unignore", spot_id=sid))["success"]
+    assert db.ignored_spots() == []
 
 
 async def test_sent_to_expenses(ha, car, ws, advance):
