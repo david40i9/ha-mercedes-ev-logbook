@@ -242,7 +242,10 @@ class MBLogbookOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         entry = self.config_entry
-        if user_input is not None:
+        errors: dict[str, str] = {}
+        if user_input is not None and not _clean(user_input).get(CONF_CAPACITY):
+            errors[CONF_CAPACITY] = "capacity_required"
+        elif user_input is not None:
             data = _clean(user_input)
             # The name lives in the entry's data and title (shown in the car switcher,
             # the device and its sensors' names); entity IDs don't change.
@@ -253,6 +256,8 @@ class MBLogbookOptionsFlow(OptionsFlowWithReload):
                 )
             return self.async_create_entry(data=data)
         current = {**entry.data, **entry.options, CONF_CAR_NAME: entry.data.get(CONF_CAR_NAME) or entry.title}
+        if user_input is not None:
+            current.update(user_input)
         return self.async_show_form(
-            step_id="init", data_schema=_schema(self.hass, current, with_name=True)
+            step_id="init", data_schema=_schema(self.hass, current, with_name=True), errors=errors
         )

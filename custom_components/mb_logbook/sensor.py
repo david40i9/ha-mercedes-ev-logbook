@@ -106,7 +106,7 @@ class Stats:
             "last_charge_energy": (
                 charge.get("kwh") if charge else None
             ),
-            "last_charge_cost": round(charge["cost"], 2) if charge and charge.get("cost") else None,
+            "last_charge_cost": round(charge["cost"], 2) if charge and charge.get("cost") is not None else None,
             "last_charge": charge,
             "charged_month": round(month["charged_kwh"], 1),
             "charge_cost_month": round(month["charge_cost"], 2),

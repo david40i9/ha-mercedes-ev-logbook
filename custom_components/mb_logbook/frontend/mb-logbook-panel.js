@@ -488,9 +488,11 @@ class MBLogbookPanel extends HTMLElement {
     const loc = this._hass?.locale?.language;
     const barLabel = (s) => {
       const d = new Date(s.start * 1000);
-      if (this._mPeriod === "week") return d.toLocaleDateString(loc, { day: "numeric", month: "short" });
-      if (this._mPeriod === "month") return d.toLocaleDateString(loc, { month: "short" });
-      if (this._mPeriod === "quarter") return d.toLocaleDateString(loc, { month: "short", year: "2-digit" });
+      // Three letters, like the other charts (en-GB's own short form is "Sept").
+      const mon = d.toLocaleDateString(loc, { month: "short" }).slice(0, 3);
+      if (this._mPeriod === "week") return `${d.getDate()} ${mon}`;
+      if (this._mPeriod === "month") return mon;
+      if (this._mPeriod === "quarter") return `${mon} ${String(d.getFullYear()).slice(2)}`;
       return String(d.getFullYear());
     };
     const biz = spans.map((s) => all.filter((t) => t.label === "Business" && t.start_ts >= s.start && t.start_ts < s.end).reduce((a, t) => a + t.distance_km, 0));

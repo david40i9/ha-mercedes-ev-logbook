@@ -65,6 +65,9 @@
           "summary_notify": "Monthly summary (optional; sent on the 1st at 09:00)"
         }
       }
+    },
+    "error": {
+      "capacity_required": "Enter the usable battery capacity."
     }
   },
   "entity": {
@@ -90,7 +93,7 @@
   "services": {
     "import_history": {
       "name": "Import history",
-      "description": "Rebuilds trips and charges from Home Assistant's recorded history for the time before the car was added. Re-running replaces earlier imports; live-logged trips are never touched.",
+      "description": "Rebuilds trips and charges from Home Assistant's recorded history for the time before the car was added. Re-running replaces earlier imports, so splits, merges, deletions and filled-in missed trips in that period are undone; live-logged trips are never touched.",
       "fields": {
         "config_entry_id": { "name": "Car", "description": "Only this car (default: all cars)." },
         "days": { "name": "Days", "description": "How far back to look (limited by how long the recorder keeps history)." }
