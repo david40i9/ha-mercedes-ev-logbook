@@ -190,6 +190,7 @@ class _Replay:
             "kwh_meter": 0.0,
             "cost": 0.0,
             "priced_kwh": 0.0,
+            "priced_kwh_power": 0.0,
             "max_power_kw": 0.0,
             "last_ts": ts,
         }

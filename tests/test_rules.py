@@ -1,5 +1,7 @@
 """Park, drain and charging-power rules shared by the live logger and the importer."""
 
+import pytest
+
 from custom_components.mb_logbook import rules
 
 
@@ -74,6 +76,19 @@ def test_charge_cost_needs_a_price_sensor():
     assert rules.charge_cost({"kwh_meter": 10, "cost": 2.5}, True) == (2.5, "meter")
     assert rules.charge_cost({"kwh_meter": 0, "at_home": True, "kwh_power": 5, "cost_power": 1.0}, True) == (1.0, "power")
     assert rules.charge_cost({"kwh_meter": 0, "at_home": False, "kwh_power": 5, "cost_power": 1.0}, True) == (None, None)
+
+
+def test_charge_cost_covers_kwh_without_a_price_reading():
+    # 30 kWh, the price sensor out for the first 10: the rest at the average price seen
+    c = {"kwh_meter": 30, "cost": 5.0, "priced_kwh": 20.0}
+    assert rules.charge_cost(c, True) == (7.5, "meter")
+    c = {"charging": True, "at_home": True}
+    rules.add_power_sample(c, 0, 7.0, None)
+    rules.add_power_sample(c, 3600, 7.0, 0.3)  # first hour had no price
+    rules.add_power_sample(c, 7200, 0.0, None)
+    assert c["kwh_power"] == pytest.approx(14) and c["priced_kwh_power"] == pytest.approx(7)
+    assert rules.charge_cost(c, True) == (pytest.approx(4.2), "power")
+    assert rules.charge_cost({"at_home": True, "kwh_power": 5, "cost_power": 0.0, "priced_kwh_power": 0.0}, True) == (None, None)
 
 
 def test_charge_cost_without_any_price_reading_falls_back_to_rates():

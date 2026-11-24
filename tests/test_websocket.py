@@ -18,6 +18,7 @@ async def ws(ha, car, hass_ws_client, hass_admin_user):
     from pytest_homeassistant_custom_component.common import CLIENT_ID
 
     async def call(type_: str, **data):
+        assert not {"id", "type"} & data.keys(), "id and type belong to the websocket message itself"
         refresh = await ha.auth.async_create_refresh_token(hass_admin_user, CLIENT_ID)
         client = await hass_ws_client(ha, ha.auth.async_create_access_token(refresh))
         await client.send_json({"id": 1, "type": f"mb_logbook/{type_}", **data})
@@ -80,6 +81,30 @@ async def test_labels_and_place_defaults(ha, car, ws, advance):
     # The spot goes in spot_id: the message's own id is the client's to number.
     assert (await ws("place_unignore", spot_id=sid))["success"]
     assert db.ignored_spots() == []
+
+
+def test_no_command_takes_a_parameter_called_id():
+    """Home Assistant numbers each message in "id", so a parameter with that name never arrives."""
+    import re
+    from pathlib import Path
+
+    src = (Path(__file__).parents[1] / "custom_components/mb_logbook/websocket.py").read_text()
+    assert not re.search(r'vol\.(Required|Optional)\("id"\)', src)
+
+
+async def test_trips_and_charges_return_more_than_2000_rows(ha, car, ws):
+    db = car.runtime_data.db
+    cid = car.runtime_data.car_id
+
+    def fill():
+        for i in range(2001):
+            ts = 1_600_000_000 + i * 3600
+            db.add_trip({"car": cid, "start_ts": ts, "end_ts": ts + 600, "distance_km": 1.0})
+            db.add_charge({"car": cid, "start_ts": ts + 900, "end_ts": ts + 1800, "kwh_car": 1.0})
+
+    await ha.async_add_executor_job(fill)
+    assert len((await ws("trips", entry_id=car.entry_id, start=0))["result"]) == 2001
+    assert len((await ws("charges", entry_id=car.entry_id, start=0))["result"]) == 2001
 
 
 async def test_sent_to_expenses(ha, car, ws, advance):
