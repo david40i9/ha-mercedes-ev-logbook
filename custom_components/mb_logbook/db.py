@@ -103,6 +103,12 @@ CREATE TABLE IF NOT EXISTS ignored_spots (
     lon REAL NOT NULL,
     ignored_ts REAL NOT NULL
 );
+-- Odometer spans of deleted trips, so the missed-trip check doesn't log them again
+CREATE TABLE IF NOT EXISTS deleted_spans (
+    car TEXT NOT NULL,
+    odo_start_km REAL NOT NULL,
+    odo_end_km REAL NOT NULL
+);
 """
 
 # Columns added after 0.1.0: (table, column, type)
@@ -715,7 +721,17 @@ class LogbookDB:
                 self._conn.executemany("UPDATE trips SET temp_c = ? WHERE id = ?", [(t, i) for i, t in temps])
 
     def delete_trip(self, trip_id: int) -> None:
+        """Delete a trip, keeping its odometer span so it isn't logged again as missed."""
+        self._exec(
+            "INSERT INTO deleted_spans (car, odo_start_km, odo_end_km) SELECT car, odo_start_km, odo_end_km "
+            "FROM trips WHERE id = ? AND odo_start_km IS NOT NULL AND odo_end_km IS NOT NULL",
+            (trip_id,),
+        )
         self._exec("DELETE FROM trips WHERE id = ?", (trip_id,))
+
+    def deleted_spans(self, car: str) -> list[tuple[float, float]]:
+        rows = self._exec("SELECT odo_start_km, odo_end_km FROM deleted_spans WHERE car = ?", (car,))
+        return [(r["odo_start_km"], r["odo_end_km"]) for r in rows]
 
     def raw_trips(self, car: str, since_ts: float, limit: int | None = None) -> list[dict[str, Any]]:
         """Trips as stored, without route points: oldest first, or the newest ``limit``."""

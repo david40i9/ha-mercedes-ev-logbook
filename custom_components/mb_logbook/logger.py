@@ -584,7 +584,8 @@ class CarLogger:
         try:
             last = await self.hass.async_add_executor_job(self.db.raw_trips, self.car_id, 0, 1)
             prev = last[0] if last else None
-            km = gaps.missed_km(prev, record, gaps.gap_min_km(self.conf))
+            deleted = await self.hass.async_add_executor_job(self.db.deleted_spans, self.car_id)
+            km = gaps.missed_km(prev, record, gaps.gap_min_km(self.conf), deleted)
             if km is None:
                 return
             lo, hi = await gaps.async_window(self.hass, self.conf, prev, record["start_ts"], record["odo_start_km"])
@@ -639,6 +640,7 @@ class CarLogger:
             "kwh_meter": 0.0,
             "cost": 0.0,
             "priced_kwh": 0.0,
+            "priced_kwh_power": 0.0,
             "max_power_kw": 0.0,
         }
         if plug := self._state.get("plug"):

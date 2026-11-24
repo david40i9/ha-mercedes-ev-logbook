@@ -37,14 +37,19 @@ def gap_min_km(conf: dict[str, Any]) -> float:
     return max(GAP_MIN_KM, float(conf.get(CONF_MIN_DISTANCE, DEFAULT_MIN_DISTANCE_KM)))
 
 
-def missed_km(prev: dict[str, Any] | None, nxt: dict[str, Any], min_km: float) -> float | None:
-    """The distance driven between two logged trips, if it's a real gap."""
+def missed_km(
+    prev: dict[str, Any] | None, nxt: dict[str, Any], min_km: float, deleted: list[tuple[float, float]] = ()
+) -> float | None:
+    """The distance driven between two logged trips, if it's a real gap. A gap that
+    overlaps a deleted trip's odometer span (``deleted``) is that trip, not a gap."""
     if prev is None:
         return None
     a, b = prev.get("odo_end_km"), nxt.get("odo_start_km")
     if a is None or b is None or b - a < min_km:
         return None
     if nxt["start_ts"] < prev["end_ts"]:
+        return None
+    if any(lo < b and hi > a for lo, hi in deleted):
         return None
     return b - a
 
@@ -141,10 +146,11 @@ async def async_fill_gaps(hass: HomeAssistant, logger: CarLogger, days: int = 30
     """Add a missed trip wherever the odometer jumped between two logged trips."""
     since = (dt_util.utcnow() - timedelta(days=days)).timestamp()
     rows = await hass.async_add_executor_job(logger.db.raw_trips, logger.car_id, since)
+    deleted = await hass.async_add_executor_job(logger.db.deleted_spans, logger.car_id)
     min_km = gap_min_km(logger.conf)
     added = []
     for prev, nxt in zip(rows, rows[1:], strict=False):
-        if missed_km(prev, nxt, min_km) is None:
+        if missed_km(prev, nxt, min_km, deleted) is None:
             continue
         lo, hi = await async_window(hass, logger.conf, prev, nxt["start_ts"], nxt["odo_start_km"])
         added.append(missed_trip(logger, prev, nxt, lo, hi))

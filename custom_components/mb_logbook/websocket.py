@@ -721,7 +721,7 @@ async def ws_trips(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None
     start = msg.get("start", time.time() - 30 * 86400)
     end = msg.get("end", time.time() + 86400)
     rows = await hass.async_add_executor_job(
-        logger.db.trips, logger.car_id, start, end
+        logger.db.trips, logger.car_id, start, end, 100000
     )
     connection.send_result(msg["id"], rows)
 
@@ -754,7 +754,7 @@ async def ws_charges(hass: HomeAssistant, connection, msg: dict[str, Any]) -> No
     start = msg.get("start", time.time() - 30 * 86400)
     end = msg.get("end", time.time() + 86400)
     rows = await hass.async_add_executor_job(
-        logger.db.charges, logger.car_id, start, end
+        logger.db.charges, logger.car_id, start, end, 100000
     )
     connection.send_result(msg["id"], rows)
 

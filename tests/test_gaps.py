@@ -48,6 +48,23 @@ async def test_a_small_odometer_step_is_not_a_missed_trip(ha, car, advance):
     assert all(t["park_hours"] is not None for t in rows if t["start_ts"] > min(r["start_ts"] for r in rows))
 
 
+async def test_a_deleted_trip_is_not_logged_again_as_missed(ha, car, advance):
+    """Deleting the latest trip leaves an odometer jump before the next drive."""
+    await drive(ha, advance, km=15)
+    await advance(hours=1)
+    await drive(ha, advance, km=12)
+    db = car.runtime_data.db
+    latest = max(await trips(ha, car), key=lambda t: t["start_ts"])
+    await ha.async_add_executor_job(db.delete_trip, latest["id"])
+    await advance(hours=1)
+    await drive(ha, advance, km=10)
+    rows = await trips(ha, car)
+    assert [round(t["distance_km"]) for t in sorted(rows, key=lambda t: t["start_ts"])] == [15, 10]
+    assert not any(t["gap"] for t in rows)
+    res = await ha.services.async_call(DOMAIN, "fill_gaps", {"days": 2}, blocking=True, return_response=True)
+    assert len(await trips(ha, car)) == 2, res
+
+
 def _trip(start, end, odo_a, odo_b, pos_a=(52.0, -1.0), pos_b=AWAY, soc=(80, 76)):
     return {
         "car": "VIN1", "start_ts": start, "end_ts": end, "odo_start_km": odo_a, "odo_end_km": odo_b,
@@ -115,6 +132,12 @@ def test_window_uses_the_last_sight_of_the_parked_car_and_the_first_new_reading(
 )
 def test_missed_km(prev, nxt, expected):
     assert gaps.missed_km(prev, nxt, 3.0) == expected
+
+
+def test_missed_km_skips_a_deleted_trip():
+    prev, nxt = {"odo_end_km": 10, "end_ts": 1}, {"odo_start_km": 30, "start_ts": 5}
+    assert gaps.missed_km(prev, nxt, 3.0, [(12, 20)]) is None
+    assert gaps.missed_km(prev, nxt, 3.0, [(0, 10), (30, 40)]) == 20  # touching, not inside
 
 
 def test_missed_trip_keeps_battery_figures_when_not_charged():

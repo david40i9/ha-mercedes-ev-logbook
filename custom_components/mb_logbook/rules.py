@@ -87,6 +87,7 @@ def add_power_sample(
         charge["kwh_power"] = (charge.get("kwh_power") or 0.0) + kwh
         if last[2] is not None:
             charge["cost_power"] = (charge.get("cost_power") or 0.0) + kwh * last[2]
+            charge["priced_kwh_power"] = (charge.get("priced_kwh_power") or 0.0) + kwh
     charge["pw_last"] = [ts, power_kw if power_kw is not None else (last[1] if last else 0.0), price]
 
 
@@ -112,12 +113,27 @@ def charge_cost(charge: dict[str, Any], has_price: bool) -> tuple[float | None, 
         return None, None
     meter = charge.get("kwh_meter") or 0.0
     if meter > 0:
-        if "priced_kwh" in charge and not charge["priced_kwh"]:
-            return None, None  # no price reading all session: cost it at the place's rate
-        return round(charge.get("cost") or 0.0, 4), "meter"
-    if charge.get("at_home") and (charge.get("kwh_power") or 0) > 0:
-        return round(charge.get("cost_power") or 0.0, 4), "power"
+        cost = _whole_session(charge.get("cost") or 0.0, meter, charge.get("priced_kwh"), "priced_kwh" in charge)
+        return (None, None) if cost is None else (cost, "meter")
+    power = charge.get("kwh_power") or 0.0
+    if charge.get("at_home") and power > 0:
+        cost = _whole_session(
+            charge.get("cost_power") or 0.0, power, charge.get("priced_kwh_power"), "priced_kwh_power" in charge
+        )
+        return (None, None) if cost is None else (cost, "power")
     return None, None
+
+
+def _whole_session(cost: float, kwh: float, priced: float | None, counted: bool) -> float | None:
+    """The cost of all ``kwh`` when only ``priced`` of them had a price reading: the
+    rest is costed at the average price seen. None when no kWh had a price (then the
+    place's rate is used). Sessions saved before the priced kWh were counted are
+    taken as fully priced."""
+    if not counted:
+        return round(cost, 4)
+    if not priced:
+        return None
+    return round(cost * kwh / priced if priced < kwh else cost, 4)
 
 
 def trip_soc_end(
