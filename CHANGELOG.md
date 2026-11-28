@@ -2,6 +2,15 @@
 
 What changed in each release, in plain words. The newest is at the top.
 
+## 0.36.6 (28 November 2026)
+
+The last small points from the review. Nothing to change in your setup: update and reload the page.
+
+- **Deleting a place deletes its rates too.** Its charging rates and default trip type were left behind, and showed up on the Places tab as if they belonged to a Home Assistant zone. A place that shares a zone's name leaves them with the zone.
+- **Home Assistant stays responsive while zones are re-matched.** After a zone change, or when Home Assistant starts, the logbook checks every logged stop against your zones. With years of history that could hold Home Assistant up briefly. It now takes short breaks.
+- **A clearer message for a date that doesn't exist.** A rate from 30 February now says the date isn't on the calendar, instead of only asking for a date like 2026-10-22.
+- **Exported CSVs are safer still.** A place or label starting with a minus sign followed by a formula, such as -1+HYPERLINK(…), could still run in a spreadsheet. Only a plain negative number is now left as it is.
+
 ## 0.36.5 (28 November 2026)
 
 Fixes for gaps a second review found in 0.36.4, all around restarts and charging. Nothing to change in your setup: update and reload the page.

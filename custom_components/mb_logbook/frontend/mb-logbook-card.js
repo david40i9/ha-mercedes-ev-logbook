@@ -956,8 +956,9 @@ class MBLogbookCard extends HTMLElement {
 
   /** Save rows as a CSV named after the car, what it holds and the period. */
   _download(rows, what) {
-    // A cell starting with = + @ (or - before a non-number) runs as a formula in a spreadsheet.
-    const safe = (v) => (/^([=+@\t\r]|-(?![\d.]))/.test(v) ? `'${v}` : v);
+    // A cell starting with = + @ or - runs as a formula in a spreadsheet ("-1+HYPERLINK(…)"
+    // too); only a plain negative number is left alone.
+    const safe = (v) => (/^[=+@\t\r]/.test(v) || (/^-/.test(v) && !/^-\d*\.?\d+$/.test(v)) ? `'${v}` : v);
     const q = (v) => `"${safe(String(v ?? "")).replace(/"/g, '""')}"`;
     const csv = rows.map((r) => r.map(q).join(",")).join("\r\n");
     const a = document.createElement("a");
@@ -1836,7 +1837,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.36.5";
+const CARD_VERSION = "0.36.6";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
