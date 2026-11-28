@@ -1837,7 +1837,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.36.5";
+const CARD_VERSION = "0.36.6";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
