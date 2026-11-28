@@ -313,3 +313,20 @@ def test_located_stops_and_set_stop_places(db):
 
     with pytest.raises(ValueError):
         db.set_stop_places([("trips", tid, "car", "x")])
+
+
+def test_a_write_whose_commit_fails_is_undone(db, tmp_path):
+    """A reader holding the file stops the commit. The failed insert must not stay pending,
+    or the next write would commit it and a retried trip would be saved twice."""
+    import sqlite3
+
+    db._conn.execute("PRAGMA busy_timeout = 50")
+    reader = sqlite3.connect(str(tmp_path / "t.db"), isolation_level=None)
+    reader.execute("BEGIN")
+    reader.execute("SELECT * FROM trips").fetchall()  # holds a read lock until the end
+    with pytest.raises(sqlite3.OperationalError):
+        db.add_trip(trip())
+    reader.execute("COMMIT")
+    reader.close()
+    db.add_trip(trip(start_ts=5000.0, end_ts=6000.0))  # the retry, or any later write
+    assert [t["start_ts"] for t in db.trips("c1", 0, 1e12)] == [5000.0]

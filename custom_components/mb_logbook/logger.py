@@ -251,25 +251,42 @@ class CarLogger:
     @callback
     def _resync(self) -> None:
         """Bring saved state in line with the car after a restart."""
+        trip = self._state.get("trip")
+        now = time.time()
+        stop = self._stop_seconds()
         if self.conf.get(CONF_IGNITION):
             ign = self.hass.states.get(self.conf[CONF_IGNITION])
-            if self._state.get("trip") and ign is not None and ign.state in IGNITION_OFF:
-                # Ended while HA was down: close it now using the last known values,
-                # at the last movement seen (not now, which would count the downtime).
-                trip = self._state["trip"]
-                trip.setdefault("off_ts", trip.get("moved_ts") or trip["start_ts"])
+            ign_off = ign is not None and ign.state in IGNITION_OFF
+            if trip and "off_ts" in trip and not ign_off:
+                # The ignition went off, then HA restarted before the trip was closed.
+                if self._ignition_on(ign) and now < trip["off_ts"] + stop:
+                    trip.pop("off_ts")  # back on within the stop time: the same trip
+                    self._watch_stale()
+                elif self._ignition_on(ign):
+                    self._end_overdue_trip()  # a new drive has begun since
+                else:
+                    # Sensors not loaded yet; the "off" that comes later changes nothing.
+                    self._schedule_trip_end(max(0.0, trip["off_ts"] + stop - now))
+            elif trip and ign_off:
+                if "off_ts" not in trip:
+                    # Ended while HA was down: close it at the last movement seen (not
+                    # now, which would count the downtime), unless the odometer shows it
+                    # drove on unseen (see _async_end_trip).
+                    trip["off_ts"] = trip.get("moved_ts") or trip["start_ts"]
+                    trip["off_latest"] = now
                 self._schedule_trip_end(0)
-            elif not self._state.get("trip") and self._ignition_on(ign):
+            elif not trip and self._ignition_on(ign):
                 self._start_trip()
-            elif self._state.get("trip"):
+            elif trip:
                 self._watch_stale()
-        elif self._state.get("trip"):
+        elif trip:
             # Movement mode: wait out the stop time from the last movement seen.
-            trip = self._state["trip"]
             last = trip.get("off_ts") or trip["start_ts"]
-            stop = self.conf.get(CONF_STOP_MINUTES, DEFAULT_STOP_MINUTES) * 60
             trip["off_ts"] = last
-            self._schedule_trip_end(max(0.0, last + stop - time.time()))
+            trip.setdefault("off_latest", now)
+            self._schedule_trip_end(max(0.0, last + stop - now))
+        if self._state.get("ending") and self._odo_km() is not None:
+            self.hass.async_create_task(self._async_finish_ending())
         if self.conf.get(CONF_CHARGING):
             chg = self.hass.states.get(self.conf[CONF_CHARGING])
             charge = self._state.get("charge")
@@ -294,6 +311,28 @@ class CarLogger:
         self._save()
 
     # ----- helpers --------------------------------------------------------------------
+
+    def _stop_seconds(self) -> float:
+        return self.conf.get(CONF_STOP_MINUTES, DEFAULT_STOP_MINUTES) * 60
+
+    def _overdue(self, trip: dict[str, Any] | None) -> bool:
+        """Is this trip past its stop time, still open only because it's waiting to end
+        (for the odometer after a restart)? Then movement now is a new drive."""
+        return bool(trip) and "off_ts" in trip and time.time() >= trip["off_ts"] + self._stop_seconds()
+
+    def _mark_moved(self, trip: dict[str, Any]) -> None:
+        """The car was seen moving: when, and the odometer then (see _async_end_trip)."""
+        trip["moved_ts"] = time.time()
+        odo = self._odo_km()
+        if odo is not None:
+            trip["moved_odo_km"] = odo
+
+    def _freeze_charge_soc(self) -> None:
+        """Driving after a charge stopped but before it closed: the battery is now being
+        used, so the charge ends at the level as the car moves off."""
+        charge = self._state.get("charge")
+        if charge and "off_ts" in charge and charge.get("soc_end") is None:
+            charge["soc_end"] = self._soc()
 
     def _ignition_on(self, state: State | None) -> bool:
         return (
@@ -375,6 +414,8 @@ class CarLogger:
             self._on_counter()
         elif entity_id == self.conf[CONF_ODOMETER]:
             before, after = _num(old), _num(new)
+            if self._state.get("ending") and after is not None:
+                self.hass.async_create_task(self._async_finish_ending())
             if before is not None and after is not None and after > before:
                 # With an ignition sensor this only marks the car as moving, so a trip
                 # that ends while HA is down ends at the last movement seen.
@@ -383,23 +424,31 @@ class CarLogger:
     @callback
     def _on_movement(self, odo_before_km: float | None = None) -> None:
         """No ignition sensor: the car moved, so a trip is on until it stops moving."""
+        if self._overdue(self._state.get("trip")):
+            self._end_overdue_trip(odo_before_km)
+            return
         if self._state.get("trip") is None:
             self._start_trip(odo_before_km)
         trip = self._state["trip"]
         trip["off_ts"] = time.time()  # last movement; the trip ends after the stop time
+        self._mark_moved(trip)
+        self._freeze_charge_soc()
         self._save()
-        stop = self.conf.get(CONF_STOP_MINUTES, DEFAULT_STOP_MINUTES)
-        self._schedule_trip_end(stop * 60)
+        self._schedule_trip_end(self._stop_seconds())
 
     @callback
     def _on_drive(self) -> None:
         """Ignition mode: the car moved. Restart a trip the stale check closed."""
+        ign = self.hass.states.get(self.conf[CONF_IGNITION])
+        if self._overdue(self._state.get("trip")) and self._ignition_on(ign):
+            self._end_overdue_trip()
+            return
         if self._state.get("trip") is None:
-            ign = self.hass.states.get(self.conf[CONF_IGNITION])
             if not self._ignition_on(ign):
                 return
             self._start_trip()
-        self._state["trip"]["moved_ts"] = time.time()
+        self._mark_moved(self._state["trip"])
+        self._freeze_charge_soc()
         self._watch_stale()
 
     @callback
@@ -449,6 +498,9 @@ class CarLogger:
             return  # connectivity blips say nothing about driving
         trip = self._state.get("trip")
         if self._ignition_on(new):
+            if self._overdue(trip):
+                self._end_overdue_trip()  # a new drive, not the end of the old one
+                return
             if self._end_timer:
                 self._end_timer()
                 self._end_timer = None
@@ -460,8 +512,59 @@ class CarLogger:
         elif trip is not None and "off_ts" not in trip:
             trip["off_ts"] = time.time()
             self._save()
-            stop = self.conf.get(CONF_STOP_MINUTES, DEFAULT_STOP_MINUTES)
-            self._schedule_trip_end(stop * 60)
+            self._schedule_trip_end(self._stop_seconds())
+
+    @callback
+    def _end_overdue_trip(self, odo_before_km: float | None = None) -> None:
+        """The car is driving again while the last trip waits to be closed: close that one
+        now, with what is known, and start the new one after it."""
+        trip = self._state.get("trip")
+        if trip is None:
+            return
+        if self._end_timer:
+            self._end_timer()
+            self._end_timer = None
+        self._state["trip"] = None  # set apart, so this drive isn't added to it
+        self._end_tries = 0
+
+        @callback
+        def _start_new() -> None:
+            if self._state.get("trip") is not None:
+                return  # already started by a later event
+            if self.conf.get(CONF_IGNITION):
+                if self._ignition_on(self.hass.states.get(self.conf[CONF_IGNITION])):
+                    self._start_trip()
+            else:
+                self._on_movement(odo_before_km)
+
+        if self._odo_km() is None and trip.get("odo_start_km") is not None and not self._state.get("ending"):
+            # Still no odometer: the old trip ends at its first reading, which is also
+            # where the new one starts (see _async_finish_ending).
+            self._state["ending"] = trip
+            _start_new()
+            self._save()
+            return
+
+        async def _run() -> None:
+            await self._async_end_trip(trip, force=True)
+            _start_new()
+
+        self.hass.async_create_task(_run())
+
+    async def _async_finish_ending(self) -> None:
+        """Close the trip set apart for the odometer, and give the drive since then the
+        same reading as its start (and its park, which ended with that trip)."""
+        trip = self._state.pop("ending", None)
+        if trip is None:
+            return
+        odo = self._odo_km()
+        await self._async_end_trip(trip, force=True)
+        cur = self._state.get("trip")
+        if cur is not None and cur.get("odo_start_km") is None and odo is not None:
+            cur["odo_start_km"] = cur["moved_odo_km"] = odo
+        if cur is not None:
+            cur.update(rules.park_fields(self._state.get("park"), cur["start_ts"], cur.get("soc_start")))
+        self._save()
 
     @callback
     def _schedule_trip_end(self, delay: float) -> None:
@@ -482,14 +585,11 @@ class CarLogger:
         place, _ = self._place(lat, lon)
         now = time.time()
         soc = self._soc()
-        charge = self._state.get("charge")
-        if charge and "off_ts" in charge:
-            # Driving off before the charge is closed: the battery from now on is
-            # being used, so the charge ends at today's level.
-            charge["soc_end"] = soc
+        self._freeze_charge_soc()
+        odo = odo_start_km if odo_start_km is not None else self._odo_km()
         self._state["trip"] = {
             "start_ts": now,
-            "odo_start_km": odo_start_km if odo_start_km is not None else self._odo_km(),
+            "odo_start_km": odo,
             "counter_last": self._counter_km(),
             "counter_km": 0.0,
             "soc_start": soc,
@@ -500,6 +600,7 @@ class CarLogger:
             "points": [[round(now), lat, lon]] if pos else [],
             "last_fix": pos[2] if pos else None,
             "moved_ts": now,
+            "moved_odo_km": odo,
             "temp_c": temp_c(self.hass.states.get(temp_source(self.hass, self.conf) or "")),
             **rules.park_fields(self._state.get("park"), now, soc),
         }
@@ -521,17 +622,21 @@ class CarLogger:
             return
         pts.append([round(time.time()), lat, lon])
         trip["last_fix"] = fix
-        trip["moved_ts"] = time.time()
+        self._mark_moved(trip)
         self._save()
         self._watch_stale()
 
-    async def _async_end_trip(self) -> None:
-        trip = self._state.get("trip")
+    async def _async_end_trip(self, trip: dict[str, Any] | None = None, force: bool = False) -> None:
+        """Close the open trip (or `trip`, already set apart). force: don't wait for an
+        unavailable odometer, because the car is driving again."""
+        if trip is None and self._state.get("ending"):
+            await self._async_finish_ending()  # the trip before this one goes first
+        trip = trip or self._state.get("trip")
         if trip is None:
             return
         odo_end = self._odo_km()
         odo_start = trip.get("odo_start_km")
-        if odo_end is None and odo_start is not None and self._end_tries < END_RETRIES:
+        if odo_end is None and odo_start is not None and not force and self._end_tries < END_RETRIES:
             # The car's sensors are often unavailable for a while after a restart.
             # Ending now would make the distance 0 and drop the trip: wait for them.
             self._end_tries += 1
@@ -553,7 +658,15 @@ class CarLogger:
         else:
             distance = odo_km or 0.0
         min_km = self.conf.get(CONF_MIN_DISTANCE, DEFAULT_MIN_DISTANCE_KM)
-        self._state["trip"] = None
+        if self._state.get("trip") is trip:
+            self._state["trip"] = None
+        end_ts = trip.get("off_ts") or time.time()
+        moved_odo = trip.get("moved_odo_km")
+        if trip.get("off_latest") and odo_end is not None and moved_odo is not None and odo_end - moved_odo > 2.0:
+            # It drove on after the last movement seen, while HA was down: it ended some
+            # time before HA came back. That is the best known end; the last movement
+            # would give an impossible speed.
+            end_ts = trip["off_latest"]
         if distance < min_km:
             # Ignition without driving (pre-climate, sitting in the car): still parked.
             _LOGGER.debug("%s: dropped %.2f km trip", self.car_id, distance)
@@ -566,12 +679,12 @@ class CarLogger:
         place, _ = self._place(lat, lon)
         points = trip.get("points") or []
         if pos and (not points or points[-1][1:] != [lat, lon]):
-            points.append([round(trip.get("off_ts") or time.time()), lat, lon])
+            points.append([round(end_ts), lat, lon])
         soc_end = rules.trip_soc_end(self._soc(), self._state.get("charge"), trip.get("off_ts"))
         record = {
             "car": self.car_id,
             "start_ts": trip["start_ts"],
-            "end_ts": trip.get("off_ts") or time.time(),
+            "end_ts": end_ts,
             "odo_start_km": odo_start,
             "odo_end_km": odo_end,
             "distance_km": round(distance, 3),
@@ -597,7 +710,9 @@ class CarLogger:
         }
         # An earlier trip the database refused goes in first, so it isn't seen as missed driving.
         await self._async_retry_unsaved()
-        await self._async_fill_gap(record)
+        if not any(kind == "trip" for kind, _ in self._state.get("unsaved") or []):
+            # (With a trip still unsaved, its distance would look like missed driving.)
+            await self._async_fill_gap(record)
         await self._async_write("trip", record)
         # A charge that started before the trip was closed belongs to this park.
         self._state["park"] = rules.new_park(

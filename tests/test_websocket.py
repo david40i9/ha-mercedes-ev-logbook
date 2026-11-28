@@ -338,3 +338,15 @@ async def test_a_place_already_called_after_a_zone_can_still_be_resized(ha, car,
     db = car.runtime_data.db
     pid = await ha.async_add_executor_job(db.save_place, {"name": "Home", "lat": 52.2, "lon": -1.2, "radius_m": 100})
     assert (await ws("place_save", place_id=pid, name="Home", lat=52.2, lon=-1.2, radius_m=200))["success"]
+
+
+async def test_renaming_an_old_place_called_after_a_zone_leaves_the_zone_its_rates(ha, car, ws):
+    db = car.runtime_data.db
+    pid = await ha.async_add_executor_job(db.save_place, {"name": "Home", "lat": 52.2, "lon": -1.2, "radius_m": 100})
+    assert (await ws("rate_save", location="Home", valid_from="2026-01-01", rate=0.07))["success"]
+    await ws("place_label_set", location="Home", label="Personal")
+    assert (await ws("place_save", place_id=pid, name="Garage", lat=52.2, lon=-1.2, radius_m=100))["success"]
+    rates = (await ws("rates"))["result"]["rates"]
+    assert {r["location"] for r in rates} == {"Home"}
+    labels = {r["location"]: r["label"] for r in (await ws("place_labels"))["result"]}
+    assert labels.get("Home") == "Personal" and "Garage" not in labels
