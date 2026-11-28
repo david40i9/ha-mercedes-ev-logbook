@@ -142,3 +142,24 @@ async def test_import_service_can_target_one_car(ha):
         DOMAIN, "import_history", {"config_entry_id": a.entry_id, "days": 1}, blocking=True, return_response=True
     )
     assert list(res) == ["Test car"]
+
+
+async def test_two_cars_set_up_together_share_one_database(ha):
+    """Home Assistant starts all cars at once: the shared parts must still be made once."""
+    from homeassistant.setup import async_setup_component
+
+    base_states(ha, "car2")
+    entries = [
+        MockConfigEntry(domain=DOMAIN, data=BASE_CONF, unique_id="VIN1", title="Test car"),
+        MockConfigEntry(domain=DOMAIN, data={**BASE_CONF, "car_name": "Second", "odometer_entity": "sensor.car2_odometer"},
+                        unique_id="VIN2", title="Second"),
+    ]
+    for entry in entries:
+        entry.add_to_hass(ha)
+    with patch("custom_components.mb_logbook.async_import_history", return_value={"trips": 0, "charges": 0}), \
+            patch("custom_components.mb_logbook.async_track_zones", wraps=None) as zones:
+        zones.return_value = lambda: None
+        assert await async_setup_component(ha, DOMAIN, {})
+        await ha.async_block_till_done()
+    assert all(e.runtime_data.db is ha.data[DOMAIN]["db"] for e in entries)
+    assert zones.call_count == 1

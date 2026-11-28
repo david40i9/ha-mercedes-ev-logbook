@@ -27,5 +27,7 @@ jobs:
         run: ruff check .
       - name: Frontend syntax
         run: for f in custom_components/mb_logbook/frontend/*.js; do node --check "$f"; done
+      - name: Card tests
+        run: node --test tests/js/*.test.mjs
       - name: Tests
         run: pytest -q

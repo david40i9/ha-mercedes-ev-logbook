@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+import sqlite3
 import time
 from typing import Any
 
@@ -86,6 +87,8 @@ STALE_MINUTES = 30
 # Ending a trip waits this long for an unavailable odometer (after a restart).
 END_RETRY_SECONDS = 60
 END_RETRIES = 30
+# A trip or charge the database refused (disk full, locked) is kept and tried again.
+WRITE_RETRY_MINUTES = 5
 
 
 def _moved_m(old: State | None, new: State | None) -> float:
@@ -145,6 +148,7 @@ class CarLogger:
         self._end_tries = 0
         self._stale_timer = None
         self._charge_end_timer = None
+        self._retry_timer = None
         self._plugs: dict[str, str] = {}  # plug sensor entity_id -> "AC" / "DC"
 
     # ----- public state used by entities -------------------------------------------
@@ -218,14 +222,17 @@ class CarLogger:
                     )
                 )
         self._resync()
+        if self._state.get("unsaved"):
+            self._schedule_write_retry(60)
 
     async def async_stop(self) -> None:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
-        for timer in (self._end_timer, self._stale_timer, self._charge_end_timer):
+        for timer in (self._end_timer, self._stale_timer, self._charge_end_timer, self._retry_timer):
             if timer:
                 timer()
+        self._retry_timer = None
         charge = self._state.get("charge")
         if charge and "off_ts" not in charge and charge.get("pw_last"):
             # Still charging as we stop: count the power up to now, so if it ends
@@ -588,8 +595,10 @@ class CarLogger:
             "points": points,
             "temp_c": trip.get("temp_c"),
         }
+        # An earlier trip the database refused goes in first, so it isn't seen as missed driving.
+        await self._async_retry_unsaved()
         await self._async_fill_gap(record)
-        await self.hass.async_add_executor_job(self.db.add_trip, record)
+        await self._async_write("trip", record)
         # A charge that started before the trip was closed belongs to this park.
         self._state["park"] = rules.new_park(
             record["end_ts"],
@@ -598,6 +607,43 @@ class CarLogger:
         )
         self._save()
         self._notify()
+
+    async def _async_write(self, kind: str, record: dict[str, Any]) -> None:
+        """Save a finished trip or charge. If the database refuses it, keep it in the
+        saved state and try again later, rather than losing it."""
+        add = self.db.add_trip if kind == "trip" else self.db.add_charge
+        try:
+            await self.hass.async_add_executor_job(add, record)
+        except sqlite3.Error:
+            _LOGGER.exception(
+                "%s: couldn't save a %s; trying again in %d min", self.car_id, kind, WRITE_RETRY_MINUTES
+            )
+            self._state.setdefault("unsaved", []).append([kind, record])
+            self._schedule_write_retry(WRITE_RETRY_MINUTES * 60)
+
+    async def _async_retry_unsaved(self) -> None:
+        pending = self._state.get("unsaved")
+        if not pending:
+            return
+        self._state["unsaved"] = []
+        for kind, record in pending:
+            await self._async_write(kind, record)  # back on the list if it fails again
+        if not self._state["unsaved"]:
+            _LOGGER.info("%s: saved %d record(s) the database refused earlier", self.car_id, len(pending))
+        self._save()
+        self._notify()
+
+    @callback
+    def _schedule_write_retry(self, delay: float) -> None:
+        if self._retry_timer:
+            self._retry_timer()
+
+        @callback
+        def _fire(_now) -> None:
+            self._retry_timer = None
+            self.hass.async_create_task(self._async_retry_unsaved())
+
+        self._retry_timer = async_call_later(self.hass, timedelta(seconds=delay), _fire)
 
     async def _async_fill_gap(self, record: dict[str, Any]) -> None:
         """Log driving the odometer shows since the last trip as a missed trip.
@@ -676,6 +722,8 @@ class CarLogger:
         if self.conf.get(CONF_CHARGE_POWER):
             power = _num(self.hass.states.get(self.conf[CONF_CHARGE_POWER]))
             rules.add_power_sample(self._state["charge"], time.time(), power or 0.0, self._price())
+            # A steady session may send no further reading: this one counts for the peak.
+            self._state["charge"]["max_power_kw"] = max(power or 0.0, 0.0)
         park = self._state.setdefault("park", self._park_snapshot())
         park["charged"] = True
         self._save()
@@ -740,7 +788,7 @@ class CarLogger:
             "plugged_ts": charge.get("plugged_ts"),
             "unplugged_ts": charge.get("unplugged_ts"),
         }
-        await self.hass.async_add_executor_job(self.db.add_charge, record)
+        await self._async_write("charge", record)
         # Same park, now charged; drain is measured from the end of the charge.
         self._state["park"] = rules.after_charge(self._state.get("park"), record["end_ts"], soc_end)
         self._save()

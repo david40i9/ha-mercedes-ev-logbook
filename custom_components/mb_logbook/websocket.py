@@ -108,14 +108,12 @@ async def _photon(session, lat: float, lon: float, radius: float) -> list[dict[s
     """Photon (OpenStreetMap data, by Komoot): businesses and venues near the point."""
     base = [("lat", f"{lat:.6f}"), ("lon", f"{lon:.6f}"), ("radius", f"{radius / 1000:.2f}"), ("lang", "en")]
     pois = base + [("limit", "20")] + [("osm_tag", k) for k in POI_KEYS.split("|")]
-    features = []
-    for params in (pois,):
-        async with session.get(
-            PHOTON_URL, params=params, headers={"User-Agent": USER_AGENT}, timeout=LOOKUP_TIMEOUT
-        ) as resp:
-            if resp.status != 200:
-                raise aiohttp.ClientError(f"Photon said {resp.status}")
-            features += (await resp.json(content_type=None)).get("features", [])
+    async with session.get(
+        PHOTON_URL, params=pois, headers={"User-Agent": USER_AGENT}, timeout=LOOKUP_TIMEOUT
+    ) as resp:
+        if resp.status != 200:
+            raise aiohttp.ClientError(f"Photon said {resp.status}")
+        features = (await resp.json(content_type=None)).get("features", [])
     out = []
     for f in features:
         props = f.get("properties") or {}
@@ -156,6 +154,7 @@ async def _overpass(session, lat: float, lon: float, radius: float) -> list[dict
     return out
 
 
+@websocket_api.require_admin  # it sends a point to outside services; only admins name places
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/suggest_names",
@@ -170,7 +169,7 @@ async def ws_suggest_names(hass: HomeAssistant, connection, msg: dict[str, Any])
 
     Only runs when the user asks for suggestions, and sends nothing but this
     one point; no car, trip or account data. Photon first (fast), Overpass if
-    Photon fails. Businesses come first, then nearby street names.
+    Photon fails. Businesses and venues only, nearest first.
     """
     lat, lon = msg["lat"], msg["lon"]
     radius = max(80.0, msg["radius_m"])
@@ -200,15 +199,12 @@ async def ws_suggest_names(hass: HomeAssistant, connection, msg: dict[str, Any])
         dist = distance_m(lat, lon, f["lat"], f["lon"])
         if dist > radius * 1.5:
             continue
-        rank = 0 if f["key"] in poi_keys else 1  # businesses before streets/areas
-        item = {"name": f["name"], "kind": str(f["kind"]).replace("_", " "), "distance_m": round(dist), "rank": rank}
-        if f["name"] not in best or (rank, dist) < (best[f["name"]]["rank"], best[f["name"]]["distance_m"]):
-            best[f["name"]] = item
-    # Businesses and venues only: no streets, areas or postcodes.
-    suggestions = sorted(
-        (s for s in best.values() if s["rank"] == 0 and not POSTCODE_RE.match(s["name"])),
-        key=lambda s: s["distance_m"],
-    )[:10]
+        # Businesses and venues only: no streets, areas or postcodes.
+        if f["key"] not in poi_keys or POSTCODE_RE.match(f["name"]):
+            continue
+        if f["name"] not in best or dist < best[f["name"]]["distance_m"]:
+            best[f["name"]] = {"name": f["name"], "kind": str(f["kind"]).replace("_", " "), "distance_m": round(dist)}
+    suggestions = sorted(best.values(), key=lambda s: s["distance_m"])[:10]
     connection.send_result(msg["id"], suggestions)
 
 
@@ -660,6 +656,16 @@ async def ws_place_save(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
     elif same is not None:
         # Two places with one name would share (and overwrite) its default label and rates.
         connection.send_error(msg["id"], "name_taken", f"Another place is already called {same['name']}")
+        return
+    current = next((p["name"] for p in existing if p["id"] == place_id), None)
+    zone = next(
+        (z.name for z in hass.states.async_all("zone") if z.name.casefold() == msg["name"].casefold()), None
+    )
+    if zone is not None and (current is None or current.casefold() != msg["name"].casefold()):
+        # A zone's rates and default label are kept by name too, and move with a rename.
+        connection.send_error(
+            msg["id"], "name_taken", f"{zone} is a Home Assistant zone; give this place another name"
+        )
         return
     if not linked_existing:
         place = {

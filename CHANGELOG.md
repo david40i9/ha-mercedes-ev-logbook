@@ -10,6 +10,14 @@ Fixes for trips and charges that could be logged wrongly, or lost, without any w
 - **A restart no longer throws away a trip.** After Home Assistant restarts, the car's sensors are often unavailable for a while. A trip that was still open could be ended straight away with no odometer reading, come out as 0 miles and be thrown away, losing its route. It now waits for the odometer, checking every minute for up to half an hour.
 - **A trip that ended while Home Assistant was down gets the right end time.** It used to end at the moment Home Assistant came back, so a 20 minute drive followed by 3 hours of downtime was logged as 200 minutes, with the wrong average speed and parked time. It now ends at the last time the car was seen moving.
 - **The card always shows the period and car you picked.** Clicking Year and then Week quickly could leave the slower Year figures under the Week heading, and a CSV exported then had the wrong trips. Only the latest choice is shown now.
+- **A trip or charge is kept if it can't be saved.** If the database was full or busy at the moment a trip or charge finished, it was lost with only a line in the log. It's now kept and saved again a few minutes later, even across a restart.
+- **Several cars start cleanly together.** With two or more cars, Home Assistant starts them at the same time, and both could set up the logbook's shared parts, which could stop a car from starting. They now take turns.
+- **Peak charging power is recorded for steady charges.** A rapid charge that stayed at the same power from the start showed no peak, and so no AC/DC badge on cars without plug sensors. The first reading now counts.
+- **Re-importing history keeps late charger readings.** Some home chargers report their last reading a minute or two after charging stops. The live log counted it but Import history didn't, so a re-import could lower the energy and cost. Both count it now.
+- **A new rate starts today, not yesterday.** The "New rate from" box used the date in UTC, so just after midnight in a UK summer it said yesterday's date. It now uses your local date.
+- **A place can't be named after a Home Assistant zone.** A place called "Home" shared its rates and default trip type with the Home zone, and renaming one moved them with it. Such names are now refused. A place that already has one can still be moved or resized.
+- **Only administrators can scan for nearby names.** The screen only offered it to administrators, but any user could ask Home Assistant to send a point to OpenStreetMap.
+- **Behind the scenes:** the card's CSV export now has its own tests, and some leftover code was tidied up.
 
 ## 0.36.3 (24 November 2026)
 

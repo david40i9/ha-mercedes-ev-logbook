@@ -324,3 +324,22 @@ async def test_import_matches_live_when_driving_off_before_a_charge_closes(ha, c
     _, _, rep = await replay(ha, car, start)
     assert pick(rep, COMPARE_CHARGE) == pick(live, COMPARE_CHARGE)
     assert rep[0]["soc_end"] == 80
+
+
+async def test_import_matches_live_for_a_steady_charge_and_a_slow_meter(ha, advance):
+    """The peak is the first power reading; meter readings just after charging stops count."""
+    ha.states.async_set("sensor.meter", "100", {"unit_of_measurement": "kWh"})
+    entry = await add_car(ha, {**BASE_CONF, "charger_energy_entity": "sensor.meter"})
+    start = dt_util.utcnow()
+    set_car(ha, power=7)
+    await advance(minutes=1)
+    set_car(ha, charging="on")
+    await advance(hours=1)
+    set_car(ha, charging="off", soc=87)
+    await advance(minutes=2)
+    ha.states.async_set("sensor.meter", "107", {"unit_of_measurement": "kWh"})  # reported late
+    await advance(minutes=11)
+    live = await charges(ha, entry)
+    assert live[0]["kwh_meter"] == 7 and live[0]["max_power_kw"] == 7
+    _, _, rep = await replay(ha, entry, start)
+    assert pick(rep, COMPARE_CHARGE + ("max_power_kw",)) == pick(live, COMPARE_CHARGE + ("max_power_kw",))

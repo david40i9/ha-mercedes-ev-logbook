@@ -198,7 +198,9 @@ class _Replay:
             "last_ts": ts,
         }
         if self.conf.get(CONF_CHARGE_POWER):
-            rules.add_power_sample(self.charge, ts, self._val(CONF_CHARGE_POWER) or 0.0, self._price())
+            power = self._val(CONF_CHARGE_POWER) or 0.0
+            rules.add_power_sample(self.charge, ts, power, self._price())
+            self.charge["max_power_kw"] = max(power, 0.0)  # the live logger's rule
         self.park["charged"] = True
 
     def end_charge(self) -> None:
@@ -329,7 +331,8 @@ class _Replay:
             if self.charge is not None and "off_ts" not in self.charge and self.charge.get("pw_last"):
                 rules.add_power_sample(self.charge, ts, None, _price_of(st))
         elif eid == c.get(CONF_CHARGER_ENERGY):
-            if self.charge is None or not self.charge["at_home"] or "off_ts" in self.charge:
+            # Readings after charging stopped still count (slow meters), as live.
+            if self.charge is None or not self.charge["at_home"]:
                 return
             n = _num(st)
             if n is None:

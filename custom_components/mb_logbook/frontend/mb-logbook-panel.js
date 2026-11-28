@@ -767,8 +767,8 @@ class MBLogbookPanel extends HTMLElement {
     );
   }
 
-  /** A loaded <ha-map> in `box`, or null (with a message) if HA's map isn't available. */
-  async _newMap(box) {
+  /** A loaded <ha-map> in `box` (drawing `paths`, if given), or null (with a message) if HA's map isn't available. */
+  async _newMap(box, paths = null) {
     if (!customElements.get("ha-map")) {
       try {
         const helpers = await window.loadCardHelpers();
@@ -786,6 +786,7 @@ class MBLogbookPanel extends HTMLElement {
     map.hass = this._hass;
     map.autoFit = false;
     map.fitZones = false;
+    if (paths) map.paths = paths;
     box.innerHTML = "";
     box.appendChild(map);
     for (let i = 0; i < 60 && !map._loaded; i++) await new Promise((r) => setTimeout(r, 100));
@@ -826,29 +827,9 @@ class MBLogbookPanel extends HTMLElement {
       box.innerHTML = `<div class=empty>No routes yet this month.</div>`;
       return;
     }
-    if (!customElements.get("ha-map")) {
-      try {
-        const helpers = await window.loadCardHelpers();
-        helpers.createCardElement({ type: "map", entities: ["zone.home"] });
-        await Promise.race([customElements.whenDefined("ha-map"), new Promise((r) => setTimeout(r, 5000))]);
-      } catch (e) {
-        /* fall through */
-      }
-    }
-    if (!customElements.get("ha-map")) {
-      box.innerHTML = `<div class=empty>Map unavailable.</div>`;
-      return;
-    }
-    const map = document.createElement("ha-map");
-    map.hass = this._hass;
-    map.autoFit = false;
-    map.fitZones = false;
-    map.paths = paths;
-    box.innerHTML = "";
-    box.appendChild(map);
+    const map = await this._newMap(box, paths);
+    if (!map) return;
     this._map = map;
-    for (let i = 0; i < 60 && !map._loaded; i++) await new Promise((r) => setTimeout(r, 100));
-    await new Promise((r) => setTimeout(r, 150));
     const pts = paths.flatMap((p) => p.points.map((q) => q.point));
     const lats = pts.map((p) => p[0]);
     const lons = pts.map((p) => p[1]);

@@ -7,6 +7,7 @@ log. Nothing is sent outside Home Assistant.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -48,6 +49,13 @@ type LogbookConfigEntry = ConfigEntry[CarLogger]
 
 async def _async_setup_shared(hass: HomeAssistant) -> LogbookDB:
     data = hass.data.setdefault(DOMAIN, {})
+    # Home Assistant sets up several cars at once: one at a time here, so the shared
+    # database, listeners and panel are only made once.
+    async with data.setdefault("setup_lock", asyncio.Lock()):
+        return await _async_setup_shared_locked(hass, data)
+
+
+async def _async_setup_shared_locked(hass: HomeAssistant, data: dict) -> LogbookDB:
     if "db" not in data:
         db = LogbookDB(hass.config.path(DB_FILENAME))
         await hass.async_add_executor_job(db.open)

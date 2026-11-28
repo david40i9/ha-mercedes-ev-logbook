@@ -360,7 +360,9 @@ class MBLogbookCard extends HTMLElement {
     if (!r || !r.locations.length) return "";
     const admin = this._hass.user?.is_admin;
     const now = Date.now() / 1000;
-    const today = new Date().toISOString().slice(0, 10);
+    // Today where you are (toISOString is UTC: yesterday just after midnight in a UK summer).
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const rows = r.locations
       .map((loc, i) => {
         const hist = r.rates.filter((x) => x.location === loc.location).sort((a, b) => a.valid_from - b.valid_from);
