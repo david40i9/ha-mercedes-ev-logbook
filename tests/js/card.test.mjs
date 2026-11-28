@@ -87,4 +87,11 @@ test("the trips CSV has only the filtered trips, oldest first, in miles, formula
   const row = (await saved[1].text()).split("\r\n")[1];
   assert.match(row, /"'=HYPERLINK\(\)"/);
   assert.match(row, /"'=Business"/);
+
+  // A leading minus is a formula too, unless the cell is just a negative number.
+  card._trips = [{ ...trip(5, "Business", 10, 5), start_place: "-1+HYPERLINK()", soc_start: -3.5 }];
+  card._exportCsv();
+  const row2 = (await saved[2].text()).split("\r\n")[1];
+  assert.match(row2, /"'-1\+HYPERLINK\(\)"/);
+  assert.match(row2, /"-3\.5"/);
 });

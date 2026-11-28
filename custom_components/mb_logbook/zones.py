@@ -9,6 +9,7 @@ zone's charging rates and default trip label across.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -40,7 +41,9 @@ async def async_resync_zones(
         await hass.async_add_executor_job(db.rename_location, old, new)
     stops = await hass.async_add_executor_job(db.located_stops)
     changes = []
-    for table, row_id, col, lat, lon, place in stops:
+    for i, (table, row_id, col, lat, lon, place) in enumerate(stops):
+        if i and not i % 500:
+            await asyncio.sleep(0)  # years of history: let Home Assistant get on meanwhile
         zone = async_active_zone(hass, lat, lon, 0)
         name = zone.name if zone is not None else None
         if name != place:

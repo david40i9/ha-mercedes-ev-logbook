@@ -438,9 +438,15 @@ class LogbookDB:
             loc["last_ts"] = max(loc["last_ts"], r["start_ts"])
         return sorted(out.values(), key=lambda x: -x["charges"])
 
-    def delete_place(self, place_id: int) -> None:
+    def delete_place(self, place_id: int, zone_names: set[str] | frozenset[str] = frozenset()) -> None:
+        """Delete a place, and its rates and default trip type with it, unless its name is
+        also an HA zone's (zone_names, casefolded): then they are the zone's."""
+        rows = self._exec("SELECT name FROM places WHERE id = ?", (place_id,))
         self._exec("DELETE FROM place_anchors WHERE place_id = ?", (place_id,))
         self._exec("DELETE FROM places WHERE id = ?", (place_id,))
+        if rows and rows[0]["name"].casefold() not in zone_names:
+            self._exec("DELETE FROM charge_rates WHERE location = ?", (rows[0]["name"],))
+            self._exec("DELETE FROM place_labels WHERE location = ?", (rows[0]["name"],))
 
     def place_usage(self) -> dict[int, int]:
         """How many trip ends and charges each place currently names."""

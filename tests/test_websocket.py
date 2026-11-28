@@ -350,3 +350,26 @@ async def test_renaming_an_old_place_called_after_a_zone_leaves_the_zone_its_rat
     assert {r["location"] for r in rates} == {"Home"}
     labels = {r["location"]: r["label"] for r in (await ws("place_labels"))["result"]}
     assert labels.get("Home") == "Personal" and "Garage" not in labels
+
+
+async def test_deleting_a_place_deletes_its_rates_and_default_type(ha, car, ws):
+    pid = (await ws("place_save", name="Gym", lat=52.2, lon=-1.2, radius_m=100))["result"]["id"]
+    assert (await ws("rate_save", location="Gym", valid_from="2026-01-01", rate=0.5))["success"]
+    await ws("place_label_set", location="Gym", label="Personal")
+    assert (await ws("place_delete", place_id=pid))["success"]
+    assert (await ws("rates"))["result"]["rates"] == []
+    assert "Gym" not in {r["location"] for r in (await ws("place_labels"))["result"]}
+
+
+async def test_deleting_an_old_place_called_after_a_zone_leaves_the_zone_its_rates(ha, car, ws):
+    db = car.runtime_data.db
+    pid = await ha.async_add_executor_job(db.save_place, {"name": "Home", "lat": 52.2, "lon": -1.2, "radius_m": 100})
+    assert (await ws("rate_save", location="Home", valid_from="2026-01-01", rate=0.07))["success"]
+    assert (await ws("place_delete", place_id=pid))["success"]
+    assert [r["location"] for r in (await ws("rates"))["result"]["rates"]] == ["Home"]
+
+
+async def test_an_impossible_rate_date_says_so(ha, car, ws):
+    bad = await ws("rate_save", location="Home", valid_from="2026-02-30", rate=0.3)
+    assert bad["error"]["code"] == "invalid_format"
+    assert "isn't a date" in bad["error"]["message"]

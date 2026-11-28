@@ -397,7 +397,7 @@ async def ws_rate_save(hass: HomeAssistant, connection, msg: dict[str, Any]) -> 
     try:
         valid_from = _local_midnight(msg["valid_from"])
     except vol.Invalid:
-        connection.send_error(msg["id"], "invalid_format", "Use a date like 2026-10-22")
+        connection.send_error(msg["id"], "invalid_format", "That isn't a date on the calendar. Use one like 2026-10-22")
         return
     rate_id = await hass.async_add_executor_job(
         db.save_rate,
@@ -691,7 +691,8 @@ async def ws_place_save(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
 @websocket_api.async_response
 async def ws_place_delete(hass: HomeAssistant, connection, msg: dict[str, Any]) -> None:
     db = hass.data[DOMAIN]["db"]
-    await hass.async_add_executor_job(db.delete_place, msg["place_id"])
+    zones = {z.name.casefold() for z in hass.states.async_all("zone")}
+    await hass.async_add_executor_job(db.delete_place, msg["place_id"], zones)
     _refresh_all(hass)
     connection.send_result(msg["id"], {"deleted": msg["place_id"]})
 
