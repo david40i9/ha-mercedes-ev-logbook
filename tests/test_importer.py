@@ -311,3 +311,16 @@ async def test_import_splits_a_shared_meter_like_the_live_logger(ha, advance):
     assert live["kwh_meter"] == 7.5
     _, _, rep = await replay(ha, a, start)
     assert rep[0]["kwh_meter"] == 7.5  # today: 10.0
+
+
+async def test_import_matches_live_when_driving_off_before_a_charge_closes(ha, car, advance):
+    from .test_logger_edges import rapid_charge_then_drive
+
+    start = dt_util.utcnow()
+    await rapid_charge_then_drive(ha, advance, 75)
+    set_car(ha, ignition="0")
+    await advance(minutes=4)
+    live = await charges(ha, car)
+    _, _, rep = await replay(ha, car, start)
+    assert pick(rep, COMPARE_CHARGE) == pick(live, COMPARE_CHARGE)
+    assert rep[0]["soc_end"] == 80

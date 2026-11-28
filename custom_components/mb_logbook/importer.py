@@ -105,6 +105,9 @@ class _Replay:
         pos = self._pos()
         lat, lon = (pos[0], pos[1]) if pos else (None, None)
         soc = self._val(CONF_SOC)
+        if self.charge and "off_ts" in self.charge:
+            # Driving off before the charge is closed: the live logger's rule.
+            self.charge["soc_end"] = soc
         self.trip = {
             "start_ts": ts,
             "odo_start_km": odo_start_km if odo_start_km is not None else self._km(CONF_ODOMETER),
@@ -201,7 +204,7 @@ class _Replay:
     def end_charge(self) -> None:
         c = self.charge
         self.charge = None
-        soc_end = self._val(CONF_SOC)
+        soc_end = c["soc_end"] if c.get("soc_end") is not None else self._val(CONF_SOC)
         cap = float(self.conf.get(CONF_CAPACITY) or 0)
         kwh_car = (
             round((soc_end - c["soc_start"]) / 100 * cap, 2)
@@ -257,6 +260,9 @@ class _Replay:
             eid == c.get(CONF_TRIP_DISTANCE) and (_num(st) or 0) > (_num(old) or 0)
         )
         if c.get(CONF_IGNITION):
+            if not moved and eid == c[CONF_ODOMETER]:
+                b, a = _num(old), _num(st)
+                moved = b is not None and a is not None and a > b  # the live logger's rule
             if moved:
                 ign = self.cur.get(c[CONF_IGNITION])
                 if self.trip is None and ign is not None and ign.state not in IGNITION_OFF and ign.state not in UNKNOWN_STATES:
@@ -311,9 +317,11 @@ class _Replay:
             if st.state == "on":
                 if self.charge is None:
                     self.start_charge(ts)
-                elif self.charge.pop("off_ts", None) is not None and c.get(CONF_CHARGE_POWER):
+                elif self.charge.pop("off_ts", None) is not None:
                     # Resumed within the gap: the live logger's rule.
-                    rules.add_power_sample(self.charge, ts, self._val(CONF_CHARGE_POWER) or 0.0, self._price())
+                    self.charge.pop("soc_end", None)
+                    if c.get(CONF_CHARGE_POWER):
+                        rules.add_power_sample(self.charge, ts, self._val(CONF_CHARGE_POWER) or 0.0, self._price())
             elif self.charge is not None and "off_ts" not in self.charge:
                 self.charge["off_ts"] = ts
                 rules.add_power_sample(self.charge, ts, 0.0, self._price())

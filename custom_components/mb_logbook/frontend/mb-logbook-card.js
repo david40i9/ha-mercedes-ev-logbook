@@ -59,6 +59,7 @@ class MBLogbookCard extends HTMLElement {
     this._sort = {}; // tab -> { key, dir }, unset = the default order
     this._tab = "trips";
     this._open = null;
+    this._loads = 0; // numbers each _load, so a slower earlier one can't land last
     this._cars = null;
     this._car = null;
     this._trips = [];
@@ -169,6 +170,7 @@ class MBLogbookCard extends HTMLElement {
     }
     const { start, end } = this._range();
     const args = { entry_id: this._car.entry_id, start, end };
+    const load = ++this._loads;
     const [trips, charges, places, rates, labels, placeLabels, unnamed, ignored] = await Promise.all([
       this._hass.callWS({ type: "mb_logbook/trips", ...args }),
       this._hass.callWS({ type: "mb_logbook/charges", ...args }),
@@ -179,6 +181,8 @@ class MBLogbookCard extends HTMLElement {
       this._hass.callWS({ type: "mb_logbook/unnamed_places" }).catch(() => []),
       this._hass.callWS({ type: "mb_logbook/ignored_places" }).catch(() => []),
     ]);
+    // Another period or car was picked while this was loading: its answer wins.
+    if (load !== this._loads) return;
     this._placeLabels = placeLabels;
     this._unnamed = unnamed;
     this._ignored = ignored;
@@ -1830,7 +1834,7 @@ MBLogbookCard.css = `
   @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
 `;
 
-const CARD_VERSION = "0.36.3";
+const CARD_VERSION = "0.36.4";
 
 if (!customElements.get("mb-logbook-card")) {
   customElements.define("mb-logbook-card", MBLogbookCard);
