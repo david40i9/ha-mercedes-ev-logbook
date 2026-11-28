@@ -9,6 +9,13 @@ Ideas and planned work for Mercedes EV Logbook. Ranked roughly by value for effo
 3. **Day-by-day timeline** of trips and stops (the heat map part is done). *(TeslaMate "visited" dashboard.)*
 4. **Charging curve** for rapid charges: store power samples during a session and plot power against battery %. *(TeslaMate charge detail.)* Needs more frequent data than the car may send.
 
+## Known limits
+
+Small gaps in the logic, known and left for now because they are rare. Fix one if it ever bites.
+
+- **A deleted trip hides an offline drive next to it.** Since 0.36.2 the missed-trip check skips any odometer gap that touches a deleted trip, so a deleted trip never comes back. If Home Assistant was also offline for a drive in the same gap, that drive isn't logged as missed either. Fix: in `gaps.missed_km`, subtract the deleted spans from the gap and log only what is left, if it's over the minimum distance. *(Noted 24 Nov 2026.)*
+- **A charge costed across a price gap isn't marked as estimated.** Since 0.36.2, kWh with no price reading are costed at the session's average price, but the charge looks the same as one priced throughout. Fix: save a separate cost basis (for example `meter_est`) and teach the card's Cost filter, the CSV "Cost basis" column and the basis labels about it. *(Noted 24 Nov 2026.)*
+
 ## Not planned
 
 - **Charging efficiency (gross vs net)**: needs a home charger meter, which most setups lack.
