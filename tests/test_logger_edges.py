@@ -413,3 +413,54 @@ async def test_a_trip_that_ended_while_ha_was_down_ends_at_the_last_movement(ha,
     [t] = await trips(ha, car)
     assert t["distance_km"] == 20
     assert t["end_ts"] - t["start_ts"] == pytest.approx(20 * 60, abs=5)
+
+
+async def test_a_trip_the_database_refuses_is_kept_and_saved_later(ha, car, advance, caplog):
+    import sqlite3
+    from unittest.mock import patch
+
+    db = car.runtime_data.db
+    real = db.add_trip
+    with patch.object(db, "add_trip", side_effect=sqlite3.OperationalError("database or disk is full")):
+        set_car(ha, ignition="4")
+        await advance(minutes=10)
+        set_car(ha, odometer=1012, pos=AWAY, ignition="0")
+        await advance(minutes=4)
+    assert "couldn't save a trip" in caplog.text
+    assert await trips(ha, car) == []
+    # It survives a restart too.
+    await restart(ha, car)
+    with patch.object(db, "add_trip", side_effect=real):
+        await advance(minutes=1)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 12
+
+
+async def test_a_charge_the_database_refuses_is_saved_later(ha, car, advance):
+    import sqlite3
+    from unittest.mock import patch
+
+    db = car.runtime_data.db
+    real = db.add_charge
+    with patch.object(db, "add_charge", side_effect=sqlite3.OperationalError("database is locked")):
+        set_car(ha, charging="on", power=7)
+        await advance(hours=1)
+        set_car(ha, charging="off", power=0, soc=87)
+        await advance(minutes=11)
+    assert await charges(ha, car) == []
+    with patch.object(db, "add_charge", side_effect=real):
+        await advance(minutes=5)
+    [c] = await charges(ha, car)
+    assert c["kwh_power"] == pytest.approx(7, abs=0.01)
+
+
+async def test_a_steady_charge_records_its_first_reading_as_the_peak(ha, car, advance):
+    """A rapid charge at a steady 150 kW sends no further power reading."""
+    set_car(ha, pos=AWAY, power=150)
+    await ha.async_block_till_done()
+    set_car(ha, charging="on")
+    await advance(minutes=20)
+    set_car(ha, charging="off", soc=95)
+    await advance(minutes=11)
+    [c] = await charges(ha, car)
+    assert c["max_power_kw"] == 150

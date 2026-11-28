@@ -59,6 +59,9 @@ async def test_writes_need_an_admin(ha, car, hass_ws_client, hass_read_only_acce
     assert (await client.receive_json())["error"]["code"] == "unauthorized"
     await client.send_json({"id": 4, "type": "mb_logbook/trips_expensed", "trip_ids": [t["id"]]})
     assert (await client.receive_json())["error"]["code"] == "unauthorized"
+    # Name suggestions send a point to OpenStreetMap services: admins only.
+    await client.send_json({"id": 5, "type": "mb_logbook/suggest_names", "lat": 52.0, "lon": -1.0})
+    assert (await client.receive_json())["error"]["code"] == "unauthorized"
 
 
 async def test_labels_and_place_defaults(ha, car, ws, advance):
@@ -320,3 +323,18 @@ async def test_cars_lists_every_car_by_name(ha, car, ws):
     assert [c["name"] for c in cars] == ["Another", "Test car"]
     assert [c["has_meter"] for c in cars] == [True, False]
     assert cars[1]["capacity_kwh"] == 100.0 and cars[1]["trip_active"] is False
+
+
+async def test_a_place_cant_take_a_zone_name(ha, car, ws):
+    """Rates and default trip types are kept by name, so a place called Home would share the zone's."""
+    clash = await ws("place_save", name="home", lat=52.3, lon=-1.3, radius_m=100)
+    assert clash["error"]["code"] == "name_taken"
+    gym = (await ws("place_save", name="Gym", lat=52.2, lon=-1.2, radius_m=100))["result"]["id"]
+    assert (await ws("place_save", place_id=gym, name="Home", lat=52.2, lon=-1.2, radius_m=100))["error"]["code"] == "name_taken"
+
+
+async def test_a_place_already_called_after_a_zone_can_still_be_resized(ha, car, ws):
+    """Made before 0.36.4, or before the zone was: moving or resizing it still works."""
+    db = car.runtime_data.db
+    pid = await ha.async_add_executor_job(db.save_place, {"name": "Home", "lat": 52.2, "lon": -1.2, "radius_m": 100})
+    assert (await ws("place_save", place_id=pid, name="Home", lat=52.2, lon=-1.2, radius_m=200))["success"]
