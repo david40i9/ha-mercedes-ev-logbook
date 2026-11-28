@@ -83,6 +83,9 @@ MOVE_TRIGGER_M = 200.0
 # can lose signal before it reports ignition off (underground car parks), leaving
 # the ignition stuck on until the next drive.
 STALE_MINUTES = 30
+# Ending a trip waits this long for an unavailable odometer (after a restart).
+END_RETRY_SECONDS = 60
+END_RETRIES = 30
 
 
 def _moved_m(old: State | None, new: State | None) -> float:
@@ -139,6 +142,7 @@ class CarLogger:
         self._state: dict[str, Any] = {}
         self._unsubs: list = []
         self._end_timer = None
+        self._end_tries = 0
         self._stale_timer = None
         self._charge_end_timer = None
         self._plugs: dict[str, str] = {}  # plug sensor entity_id -> "AC" / "DC"
@@ -182,12 +186,10 @@ class CarLogger:
 
     async def async_start(self) -> None:
         self._state = await self._store.async_load() or {}
-        watched = [self.conf[CONF_TRACKER]]
+        # Without an ignition sensor, trips are detected from the car moving.
+        watched = [self.conf[CONF_TRACKER], self.conf[CONF_ODOMETER]]
         if self.conf.get(CONF_IGNITION):
             watched.append(self.conf[CONF_IGNITION])
-        else:
-            # No ignition sensor: trips are detected from the car moving.
-            watched.append(self.conf[CONF_ODOMETER])
         if self.conf.get(CONF_CHARGING):
             watched.append(self.conf[CONF_CHARGING])
         if self.conf.get(CONF_TRIP_DISTANCE):
@@ -245,8 +247,10 @@ class CarLogger:
         if self.conf.get(CONF_IGNITION):
             ign = self.hass.states.get(self.conf[CONF_IGNITION])
             if self._state.get("trip") and ign is not None and ign.state in IGNITION_OFF:
-                # Ended while HA was down: close it now using the last known values.
-                self._state["trip"].setdefault("off_ts", time.time())
+                # Ended while HA was down: close it now using the last known values,
+                # at the last movement seen (not now, which would count the downtime).
+                trip = self._state["trip"]
+                trip.setdefault("off_ts", trip.get("moved_ts") or trip["start_ts"])
                 self._schedule_trip_end(0)
             elif not self._state.get("trip") and self._ignition_on(ign):
                 self._start_trip()
@@ -362,10 +366,12 @@ class CarLogger:
             if (_num(new) or 0) > (_num(old) or 0):
                 self._on_movement() if moving_mode else self._on_drive()
             self._on_counter()
-        elif moving_mode and entity_id == self.conf[CONF_ODOMETER]:
+        elif entity_id == self.conf[CONF_ODOMETER]:
             before, after = _num(old), _num(new)
             if before is not None and after is not None and after > before:
-                self._on_movement(_to_km(before, old))
+                # With an ignition sensor this only marks the car as moving, so a trip
+                # that ends while HA is down ends at the last movement seen.
+                self._on_movement(_to_km(before, old)) if moving_mode else self._on_drive()
 
     @callback
     def _on_movement(self, odo_before_km: float | None = None) -> None:
@@ -469,6 +475,11 @@ class CarLogger:
         place, _ = self._place(lat, lon)
         now = time.time()
         soc = self._soc()
+        charge = self._state.get("charge")
+        if charge and "off_ts" in charge:
+            # Driving off before the charge is closed: the battery from now on is
+            # being used, so the charge ends at today's level.
+            charge["soc_end"] = soc
         self._state["trip"] = {
             "start_ts": now,
             "odo_start_km": odo_start_km if odo_start_km is not None else self._odo_km(),
@@ -513,6 +524,18 @@ class CarLogger:
             return
         odo_end = self._odo_km()
         odo_start = trip.get("odo_start_km")
+        if odo_end is None and odo_start is not None and self._end_tries < END_RETRIES:
+            # The car's sensors are often unavailable for a while after a restart.
+            # Ending now would make the distance 0 and drop the trip: wait for them.
+            self._end_tries += 1
+            self._schedule_trip_end(END_RETRY_SECONDS)
+            return
+        if odo_end is None and odo_start is not None:
+            _LOGGER.warning(
+                "%s: odometer still unavailable after %d min; ending the trip without it",
+                self.car_id, END_RETRIES * END_RETRY_SECONDS // 60,
+            )
+        self._end_tries = 0
         odo_km = odo_end - odo_start if odo_end is not None and odo_start is not None else None
         counter = trip.get("counter_km") if self.conf.get(CONF_TRIP_DISTANCE) else None
         # The counter has 0.1 resolution; the odometer may only report whole miles.
@@ -614,7 +637,10 @@ class CarLogger:
                 self._charge_end_timer = None
             if not charge:
                 self._start_charge()
-            elif charge.pop("off_ts", None) is not None and self.conf.get(CONF_CHARGE_POWER):
+            elif charge.pop("off_ts", None) is not None:
+                charge.pop("soc_end", None)  # charging again, so it ends later
+                if not self.conf.get(CONF_CHARGE_POWER):
+                    return
                 # Resumed within the gap: power flows again at the current reading,
                 # which may not change (and so send no event) after the pause.
                 power = _num(self.hass.states.get(self.conf[CONF_CHARGE_POWER]))
@@ -674,7 +700,8 @@ class CarLogger:
         if charge is None:
             return
         self._state["charge"] = None
-        soc_end = self._soc()
+        # Saved when a trip began before the charge was closed (see _start_trip).
+        soc_end = charge["soc_end"] if charge.get("soc_end") is not None else self._soc()
         soc_start = charge.get("soc_start")
         cap = self.conf.get(CONF_CAPACITY) or 0
         kwh_car = (

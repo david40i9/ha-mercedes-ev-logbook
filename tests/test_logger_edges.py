@@ -279,3 +279,137 @@ async def test_a_charge_longer_than_the_gap_after_a_stop_is_two_sessions(ha, car
     rows = sorted(await charges(ha, car), key=lambda c: c["start_ts"])
     assert [round(c["kwh_power"], 2) for c in rows] == [3.5, 3.5]
     assert (rows[0]["soc_start"], rows[0]["soc_end"], rows[1]["soc_end"]) == (80, 84, 88)
+
+
+# ----- 0.36.4: driving off before a charge closes, and trips across a restart ---------------
+
+async def rapid_charge_then_drive(ha, advance, soc_after_drive: float) -> None:
+    """A 20 to 80% rapid charge away from home, then driving off within the 10 minute gap."""
+    set_car(ha, pos=AWAY, soc=20)
+    await advance(minutes=1)
+    set_car(ha, charging="on", power=150)
+    await advance(minutes=25)
+    set_car(ha, soc=80, power=0, charging="off")
+    await advance(minutes=2)
+    set_car(ha, ignition="4")
+    await advance(minutes=5)
+    set_car(ha, odometer=1030, soc=soc_after_drive)
+    await advance(minutes=5)  # the charge closes while driving
+
+
+@pytest.mark.parametrize("soc_after_drive", [75, 19])
+async def test_driving_off_before_a_charge_closes_keeps_its_end_battery(ha, car, advance, soc_after_drive):
+    await rapid_charge_then_drive(ha, advance, soc_after_drive)
+    [c] = await charges(ha, car)
+    assert c["soc_end"] == 80
+    assert c["kwh_car"] == 60
+
+
+async def test_a_charge_that_resumes_after_a_trip_starts_reads_the_battery_at_the_end(ha, car, advance):
+    """Sat in the car with the ignition on during a pause: charging resumes, so it ends later."""
+    set_car(ha, soc=20, charging="on", power=7)
+    await advance(hours=1)
+    set_car(ha, power=0, charging="off", soc=30)
+    await advance(minutes=1)
+    set_car(ha, ignition="4")
+    await advance(minutes=1)
+    set_car(ha, charging="on", power=7)
+    await advance(hours=1)
+    set_car(ha, power=0, charging="off", soc=40)
+    await advance(minutes=11)
+    [c] = await charges(ha, car)
+    assert c["soc_end"] == 40
+
+
+async def test_restart_with_the_odometer_unavailable_waits_for_it(ha, car, advance):
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010)
+
+    def down():
+        set_car(ha, ignition="0")
+        ha.states.async_set("sensor.car_odometer", "unavailable")
+
+    await restart(ha, car, down)
+    await advance(seconds=5)
+    assert await trips(ha, car) == []
+    assert ha.states.get(TRIP_SENSOR).state == "on"
+    set_car(ha, odometer=1010)
+    await advance(minutes=1)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 10
+
+
+async def test_restart_with_every_sensor_unavailable_keeps_an_old_trip(ha, car, advance):
+    """The ignition is unavailable too, and the trip looks stale: still wait for the odometer."""
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010)
+    await ha.async_block_till_done()
+    await ha.config_entries.async_unload(car.entry_id)
+    await ha.async_block_till_done()
+    await advance(hours=1)  # HA is down
+    for entity_id in ("sensor.car_ignition", "sensor.car_odometer"):
+        ha.states.async_set(entity_id, "unavailable")
+    await ha.config_entries.async_setup(car.entry_id)
+    await ha.async_block_till_done()
+    await advance(minutes=3)
+    assert await trips(ha, car) == []
+    set_car(ha, odometer=1010, ignition="0")
+    await advance(minutes=1)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 10
+
+
+async def test_restart_in_movement_mode_with_the_odometer_unavailable_waits_for_it(ha, advance):
+    conf = {k: v for k, v in BASE_CONF.items() if k != "ignition_entity"}
+    entry = await add_car(ha, conf)
+    set_car(ha, odometer=1004)
+    await advance(minutes=1)
+    set_car(ha, odometer=1009, pos=AWAY)
+    await ha.async_block_till_done()
+    await restart(ha, entry, lambda: ha.states.async_set("sensor.car_odometer", "unavailable"))
+    await advance(minutes=4)
+    assert await trips(ha, entry) == []
+    set_car(ha, odometer=1009)
+    await advance(minutes=1)
+    [t] = await trips(ha, entry)
+    assert t["distance_km"] == 9
+
+
+async def test_an_odometer_that_never_comes_back_ends_the_trip_after_half_an_hour(ha, car, advance):
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, pos=AWAY)
+
+    def down():
+        set_car(ha, ignition="0")
+        ha.states.async_set("sensor.car_odometer", "unavailable")
+
+    await restart(ha, car, down)
+    for _ in range(29):
+        await advance(minutes=1)
+    assert ha.states.get(TRIP_SENSOR).state == "on"
+    for _ in range(3):
+        await advance(minutes=1)
+    assert ha.states.get(TRIP_SENSOR).state == "off"
+
+
+async def test_a_trip_that_ended_while_ha_was_down_ends_at_the_last_movement(ha, car, advance):
+    """A 20 minute drive, then 3 hours with HA down: the trip is 20 minutes, not 200."""
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010, pos=AWAY)
+    await advance(minutes=10)
+    set_car(ha, odometer=1020, pos=HOME)
+    await ha.async_block_till_done()
+    await ha.config_entries.async_unload(car.entry_id)
+    await ha.async_block_till_done()
+    set_car(ha, ignition="0")
+    await advance(hours=3)
+    await ha.config_entries.async_setup(car.entry_id)
+    await ha.async_block_till_done()
+    await advance(seconds=1)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 20
+    assert t["end_ts"] - t["start_ts"] == pytest.approx(20 * 60, abs=5)

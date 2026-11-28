@@ -2,6 +2,15 @@
 
 What changed in each release, in plain words. The newest is at the top.
 
+## 0.36.4 (28 November 2026)
+
+Fixes for trips and charges that could be logged wrongly, or lost, without any warning. Nothing to change in your setup: update and reload the page.
+
+- **Driving off straight after charging no longer spoils the charge.** A charge is only closed 10 minutes after it stops, in case it starts again. If you drove off in that time, the charge took its end battery level from after the drive, so a 20 to 80% rapid charge could show as 20 to 75%, or vanish altogether if the battery had dropped below where it started. The level when you set off is now kept. Re-importing history follows the same rule.
+- **A restart no longer throws away a trip.** After Home Assistant restarts, the car's sensors are often unavailable for a while. A trip that was still open could be ended straight away with no odometer reading, come out as 0 miles and be thrown away, losing its route. It now waits for the odometer, checking every minute for up to half an hour.
+- **A trip that ended while Home Assistant was down gets the right end time.** It used to end at the moment Home Assistant came back, so a 20 minute drive followed by 3 hours of downtime was logged as 200 minutes, with the wrong average speed and parked time. It now ends at the last time the car was seen moving.
+- **The card always shows the period and car you picked.** Clicking Year and then Week quickly could leave the slower Year figures under the Week heading, and a CSV exported then had the wrong trips. Only the latest choice is shown now.
+
 ## 0.36.3 (24 November 2026)
 
 Small fixes. Nothing to change in your setup: update and reload the page.
