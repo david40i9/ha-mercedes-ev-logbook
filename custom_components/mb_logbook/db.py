@@ -287,19 +287,21 @@ class LogbookDB:
                 self._conn.close()
                 self._conn = None
 
+    # Writes go through `with self._conn:`, which commits, or undoes the write if the
+    # commit fails (a locked database). A half-done write left pending would be
+    # committed by the next one, and a retried trip would then be saved twice.
+
     def _exec(self, sql: str, args: tuple = ()) -> list[sqlite3.Row]:
         with self._lock:
             assert self._conn is not None
-            cur = self._conn.execute(sql, args)
-            rows = cur.fetchall()
-            self._conn.commit()
-            return rows
+            with self._conn:
+                return self._conn.execute(sql, args).fetchall()
 
     def _insert(self, table: str, cols: tuple, values: tuple) -> int:
         with self._lock:
             assert self._conn is not None
-            cur = self._conn.execute(_insert_sql(table, cols), values)
-            self._conn.commit()
+            with self._conn:
+                cur = self._conn.execute(_insert_sql(table, cols), values)
             return int(cur.lastrowid)
 
     # ----- places ------------------------------------------------------------------------
@@ -322,14 +324,16 @@ class LogbookDB:
             "INSERT INTO place_anchors (place_id, lat, lon) VALUES (?, ?, ?)", (place_id, lat, lon)
         )
 
-    def save_place(self, place: dict[str, Any]) -> int:
+    def save_place(self, place: dict[str, Any], keep_named: bool = False) -> int:
+        """keep_named: on a rename, leave the old name's rates and default label where
+        they are (the old name is also an HA zone's, so they are the zone's)."""
         if place.get("id"):
             old = self._exec("SELECT name FROM places WHERE id = ?", (place["id"],))
             self._exec(
                 "UPDATE places SET name = ?, lat = ?, lon = ?, radius_m = ? WHERE id = ?",
                 (place["name"], place["lat"], place["lon"], place["radius_m"], place["id"]),
             )
-            if old and old[0]["name"] != place["name"]:
+            if old and old[0]["name"] != place["name"] and not keep_named:
                 # Rates follow the place when it is renamed.
                 self._exec(
                     "UPDATE charge_rates SET location = ? WHERE location = ?",
@@ -364,11 +368,11 @@ class LogbookDB:
         allowed = {("trips", "start_place"), ("trips", "end_place"), ("charges", "place")}
         with self._lock:
             assert self._conn is not None
-            for table, row_id, col, name in changes:
-                if (table, col) not in allowed:
-                    raise ValueError(f"not a place column: {table}.{col}")
-                self._conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (name, row_id))
-            self._conn.commit()
+            with self._conn:
+                for table, row_id, col, name in changes:
+                    if (table, col) not in allowed:
+                        raise ValueError(f"not a place column: {table}.{col}")
+                    self._conn.execute(f"UPDATE {table} SET {col} = ? WHERE id = ?", (name, row_id))
 
     def rename_location(self, old: str, new: str) -> None:
         """A zone was renamed: its stops (even those with no position), rates and
@@ -377,14 +381,13 @@ class LogbookDB:
             return
         with self._lock:
             assert self._conn is not None
-            c = self._conn
-            c.execute("UPDATE trips SET start_place = ? WHERE start_place = ?", (new, old))
-            c.execute("UPDATE trips SET end_place = ? WHERE end_place = ?", (new, old))
-            c.execute("UPDATE charges SET place = ? WHERE place = ?", (new, old))
-            c.execute("UPDATE charge_rates SET location = ? WHERE location = ?", (new, old))
-            c.execute("UPDATE OR IGNORE place_labels SET location = ? WHERE location = ?", (new, old))
-            c.execute("DELETE FROM place_labels WHERE location = ?", (old,))
-            c.commit()
+            with self._conn as c:
+                c.execute("UPDATE trips SET start_place = ? WHERE start_place = ?", (new, old))
+                c.execute("UPDATE trips SET end_place = ? WHERE end_place = ?", (new, old))
+                c.execute("UPDATE charges SET place = ? WHERE place = ?", (new, old))
+                c.execute("UPDATE charge_rates SET location = ? WHERE location = ?", (new, old))
+                c.execute("UPDATE OR IGNORE place_labels SET location = ? WHERE location = ?", (new, old))
+                c.execute("DELETE FROM place_labels WHERE location = ?", (old,))
 
     # ----- charging rates ----------------------------------------------------------------
     # A location (an HA zone name or a named place) can have a history of rates:
@@ -766,12 +769,12 @@ class LogbookDB:
         """The cable came out at ts: stamp the charges made since it went in."""
         with self._lock:
             assert self._conn is not None
-            cur = self._conn.execute(
-                "UPDATE charges SET unplugged_ts = ? WHERE car = ? AND unplugged_ts IS NULL "
-                "AND connector IS NOT NULL AND end_ts >= ? AND start_ts <= ?",
-                (ts, car, since, ts),
-            )
-            self._conn.commit()
+            with self._conn:
+                cur = self._conn.execute(
+                    "UPDATE charges SET unplugged_ts = ? WHERE car = ? AND unplugged_ts IS NULL "
+                    "AND connector IS NOT NULL AND end_ts >= ? AND start_ts <= ?",
+                    (ts, car, since, ts),
+                )
             return cur.rowcount
 
     def charges(

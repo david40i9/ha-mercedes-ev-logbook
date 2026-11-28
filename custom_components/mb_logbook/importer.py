@@ -105,9 +105,7 @@ class _Replay:
         pos = self._pos()
         lat, lon = (pos[0], pos[1]) if pos else (None, None)
         soc = self._val(CONF_SOC)
-        if self.charge and "off_ts" in self.charge:
-            # Driving off before the charge is closed: the live logger's rule.
-            self.charge["soc_end"] = soc
+        self._freeze_charge_soc()
         self.trip = {
             "start_ts": ts,
             "odo_start_km": odo_start_km if odo_start_km is not None else self._km(CONF_ODOMETER),
@@ -124,6 +122,11 @@ class _Replay:
             "temp_c": temp_c(self.cur.get(self.temp_id)) if self.temp_id else None,
             **rules.park_fields(self.park, ts, soc),
         }
+
+    def _freeze_charge_soc(self) -> None:
+        """Driving before the charge is closed: the live logger's rule."""
+        if self.charge and "off_ts" in self.charge and self.charge.get("soc_end") is None:
+            self.charge["soc_end"] = self._val(CONF_SOC)
 
     def end_trip(self) -> None:
         t = self.trip
@@ -271,6 +274,7 @@ class _Replay:
                     self.start_trip(ts)
                 if self.trip is not None:
                     self.trip["moved_ts"] = ts
+                    self._freeze_charge_soc()
         else:
             # No ignition sensor: the same movement rules as the live logger.
             odo_before = None
@@ -282,6 +286,7 @@ class _Replay:
                 if self.trip is None:
                     self.start_trip(ts, odo_before)
                 self.trip["off_ts"] = ts
+                self._freeze_charge_soc()
         if eid == c.get(CONF_IGNITION):
             if st.state in UNKNOWN_STATES:
                 return

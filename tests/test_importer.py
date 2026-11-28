@@ -343,3 +343,16 @@ async def test_import_matches_live_for_a_steady_charge_and_a_slow_meter(ha, adva
     assert live[0]["kwh_meter"] == 7 and live[0]["max_power_kw"] == 7
     _, _, rep = await replay(ha, entry, start)
     assert pick(rep, COMPARE_CHARGE + ("max_power_kw",)) == pick(live, COMPARE_CHARGE + ("max_power_kw",))
+
+
+async def test_import_matches_live_when_waiting_in_the_car_while_charging(ha, car, advance):
+    from .test_logger_edges import test_waiting_in_the_car_while_charging_keeps_the_charge_end_battery as scenario
+
+    start = dt_util.utcnow()
+    await scenario(ha, car, advance)
+    set_car(ha, ignition="0")
+    await advance(minutes=4)
+    live = await charges(ha, car)
+    _, _, rep = await replay(ha, car, start)
+    assert pick(rep, COMPARE_CHARGE) == pick(live, COMPARE_CHARGE)
+    assert rep[0]["soc_end"] == 80

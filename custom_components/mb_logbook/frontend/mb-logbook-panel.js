@@ -475,15 +475,17 @@ class MBLogbookPanel extends HTMLElement {
     // One fetch covers the chart's periods, ending with the chosen one.
     const n = { week: 12, month: 12, quarter: 8, year: 5 }[this._mPeriod];
     const spans = Array.from({ length: n }, (_, i) => this._range(this._mPeriod, this._mOffset + n - 1 - i));
+    const load = (this._mileageLoads = (this._mileageLoads || 0) + 1);
     let all;
     try {
       all = await this._hass.callWS({ type: "mb_logbook/trips", entry_id: car.entry_id, start: spans[0].start, end });
     } catch (e) {
+      if (load !== this._mileageLoads) return;
       box.innerHTML = `${head}<div class=dim>Couldn't load trips.</div>`;
       this._wireMileage(box);
       return;
     }
-    if (this._car !== car) return;
+    if (this._car !== car || load !== this._mileageLoads) return;
     const trips = all.filter((t) => t.start_ts >= start);
     const loc = this._hass?.locale?.language;
     const barLabel = (s) => {
@@ -669,14 +671,17 @@ class MBLogbookPanel extends HTMLElement {
         <div class=seg>${periods.map(([v, l]) => `<button data-hp="${v}" class="${v === this._hPeriod ? "on" : ""}">${l}</button>`).join("")}</div></div>`;
     box.innerHTML = `${head()}<div id=heatbox><div class=empty>Loading…</div></div>`;
     this._wireHeat(box);
+    // Numbered, so a slower load for a period picked earlier can't land last.
+    const load = (this._heatLoads = (this._heatLoads || 0) + 1);
+    const stale = () => this._car !== car || load !== this._heatLoads;
     let trips;
     try {
       trips = await this._hass.callWS({ type: "mb_logbook/trips", entry_id: car.entry_id, start, end: Date.now() / 1000 + 86400 });
     } catch (e) {
-      box.querySelector("#heatbox").innerHTML = `<div class=empty>Couldn't load trips.</div>`;
+      if (!stale()) box.querySelector("#heatbox").innerHTML = `<div class=empty>Couldn't load trips.</div>`;
       return;
     }
-    if (this._car !== car) return;
+    if (stale()) return;
     const pts = trips.filter((t) => t.end_lat != null && t.end_lon != null).map((t) => [t.end_lat, t.end_lon]);
     box.querySelector("h2").outerHTML = head(pts.length).match(/<h2>.*<\/h2>/s)[0];
     const hb = box.querySelector("#heatbox");
@@ -685,7 +690,7 @@ class MBLogbookPanel extends HTMLElement {
       return;
     }
     const map = await this._newMap(hb);
-    if (!map) return;
+    if (!map || stale()) return;
     const ml = map._engine?._map; // MapLibre map inside HA's <ha-map> (not a public API)
     if (!ml || typeof ml.addLayer !== "function") {
       hb.innerHTML = `<div class=empty>The heat map needs Home Assistant's newer map (MapLibre), which this browser or version isn't using.</div>`;

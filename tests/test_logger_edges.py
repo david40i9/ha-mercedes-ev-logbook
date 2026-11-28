@@ -464,3 +464,140 @@ async def test_a_steady_charge_records_its_first_reading_as_the_peak(ha, car, ad
     await advance(minutes=11)
     [c] = await charges(ha, car)
     assert c["max_power_kw"] == 150
+
+
+# ----- 0.36.5: the second review of 0.36.4 ---------------------------------------------------
+
+async def test_a_restart_before_the_trip_closes_still_closes_it(ha, car, advance):
+    """Ignition off, then HA restarts inside the stop time, before the car's sensors load."""
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010, pos=AWAY, ignition="0")
+    await advance(minutes=1)
+
+    def down():
+        for entity_id in ("sensor.car_ignition", "sensor.car_odometer"):
+            ha.states.async_set(entity_id, "unavailable")
+
+    await restart(ha, car, down)
+    await advance(minutes=1)
+    set_car(ha, ignition="0", odometer=1010)  # the sensors load: "off" again changes nothing
+    await advance(minutes=3)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 10
+    assert ha.states.get(TRIP_SENSOR).state == "off"
+
+
+async def test_a_new_drive_during_the_wait_for_the_odometer_is_its_own_trip(ha, car, advance):
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010, pos=AWAY)
+
+    def down():
+        set_car(ha, ignition="0")
+        ha.states.async_set("sensor.car_odometer", "unavailable")
+
+    await restart(ha, car, down)
+    await advance(minutes=5)  # waiting for the odometer
+    set_car(ha, ignition="4")  # off again, before the odometer is back
+    await advance(minutes=1)
+    set_car(ha, odometer=1010)  # its first reading: where the first trip ended
+    await advance(minutes=10)
+    set_car(ha, odometer=1025, pos=HOME, ignition="0")
+    await advance(minutes=4)
+    first, second = sorted(await trips(ha, car), key=lambda t: t["start_ts"])
+    assert first["distance_km"] == 10
+    assert second["distance_km"] == 15
+    assert second["odo_start_km"] == 1010
+
+
+async def test_a_new_drive_after_the_odometer_is_back_is_its_own_trip(ha, car, advance):
+    """The old trip is overdue and the odometer is readable: it closes at once."""
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1010, pos=AWAY)
+
+    def down():
+        set_car(ha, ignition="0")
+        ha.states.async_set("sensor.car_odometer", "unavailable")
+
+    await restart(ha, car, down)
+    await advance(minutes=5)
+    car.runtime_data._end_timer()  # as if the odometer and ignition came back together
+    car.runtime_data._end_timer = None
+    set_car(ha, odometer=1010)
+    set_car(ha, ignition="4")
+    await advance(minutes=10)
+    set_car(ha, odometer=1022, pos=HOME, ignition="0")
+    await advance(minutes=4)
+    first, second = sorted(await trips(ha, car), key=lambda t: t["start_ts"])
+    assert (first["distance_km"], second["distance_km"]) == (10, 12)
+
+
+async def test_driving_on_while_ha_was_down_ends_at_the_restart(ha, car, advance):
+    """The odometer shows it drove on after the last movement seen: no impossible speed."""
+    set_car(ha, ignition="4")
+    await advance(minutes=5)
+    set_car(ha, odometer=1005, pos=AWAY)
+    await ha.async_block_till_done()
+    await ha.config_entries.async_unload(car.entry_id)
+    await ha.async_block_till_done()
+    await advance(hours=1)  # HA down; the car drives another 95 km
+    set_car(ha, odometer=1100, ignition="0", pos=HOME)
+    await ha.config_entries.async_setup(car.entry_id)
+    await ha.async_block_till_done()
+    await advance(seconds=1)
+    [t] = await trips(ha, car)
+    assert t["distance_km"] == 100
+    assert t["end_ts"] - t["start_ts"] == pytest.approx(65 * 60, abs=5)
+
+
+async def test_waiting_in_the_car_while_charging_keeps_the_charge_end_battery(ha, car, advance):
+    """The trip began with the ignition on during the charge; the level is kept when it moves."""
+    set_car(ha, pos=AWAY, soc=20)
+    await advance(minutes=1)
+    set_car(ha, charging="on", power=150)
+    await advance(minutes=1)
+    set_car(ha, ignition="4")  # sitting in the car
+    await advance(minutes=25)
+    set_car(ha, soc=80, power=0, charging="off")
+    await advance(minutes=2)
+    set_car(ha, pos=HOME)  # drives off
+    await advance(minutes=1)
+    set_car(ha, odometer=1030, soc=75)
+    await advance(minutes=10)
+    [c] = await charges(ha, car)
+    assert c["soc_end"] == 80
+
+
+async def test_a_missed_trip_isnt_logged_while_a_trip_is_unsaved(ha, car, advance):
+    """Trip 2 can't be saved for a while; trip 3's odometer gap from trip 1 is trip 2, not missed driving."""
+    import sqlite3
+    from unittest.mock import patch
+
+    db = car.runtime_data.db
+    real = db.add_trip
+    refused = []
+
+    def flaky(trip):
+        if trip["distance_km"] == 12 and len(refused) < 3:
+            refused.append(trip)
+            raise sqlite3.OperationalError("database is locked")
+        return real(trip)
+
+    async def drive_to(odo, pos):
+        set_car(ha, ignition="4")
+        await advance(minutes=10)
+        set_car(ha, odometer=odo, pos=pos, ignition="0")
+        await advance(minutes=4)
+        await advance(minutes=1)
+
+    with patch.object(db, "add_trip", side_effect=flaky):
+        await drive_to(1005, AWAY)
+        await drive_to(1017, HOME)  # refused
+        await drive_to(1025, AWAY)  # the retry before it is refused too
+        for _ in range(3):
+            await advance(minutes=5)
+    rows = await trips(ha, car)
+    assert sorted(t["distance_km"] for t in rows) == [5, 8, 12]
+    assert not any(t.get("gap") for t in rows)

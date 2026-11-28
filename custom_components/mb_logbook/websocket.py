@@ -658,9 +658,8 @@ async def ws_place_save(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
         connection.send_error(msg["id"], "name_taken", f"Another place is already called {same['name']}")
         return
     current = next((p["name"] for p in existing if p["id"] == place_id), None)
-    zone = next(
-        (z.name for z in hass.states.async_all("zone") if z.name.casefold() == msg["name"].casefold()), None
-    )
+    zones = {z.name.casefold(): z.name for z in hass.states.async_all("zone")}
+    zone = zones.get(msg["name"].casefold())
     if zone is not None and (current is None or current.casefold() != msg["name"].casefold()):
         # A zone's rates and default label are kept by name too, and move with a rename.
         connection.send_error(
@@ -675,7 +674,10 @@ async def ws_place_save(hass: HomeAssistant, connection, msg: dict[str, Any]) ->
             "lon": msg["lon"],
             "radius_m": msg["radius_m"],
         }
-        place_id = await hass.async_add_executor_job(db.save_place, place)
+        # A place made before 0.36.4 may share a zone's name: renaming it away leaves the
+        # zone's rates and default trip type with the zone.
+        keep_named = current is not None and current.casefold() in zones
+        place_id = await hass.async_add_executor_job(db.save_place, place, keep_named)
     if "anchor_lat" in msg and "anchor_lon" in msg:
         await hass.async_add_executor_job(db.add_anchor, place_id, msg["anchor_lat"], msg["anchor_lon"])
     _refresh_all(hass)

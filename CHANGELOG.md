@@ -2,6 +2,19 @@
 
 What changed in each release, in plain words. The newest is at the top.
 
+## 0.36.5 (28 November 2026)
+
+Fixes for gaps a second review found in 0.36.4, all around restarts and charging. Nothing to change in your setup: update and reload the page.
+
+- **A trip always closes after a restart.** If Home Assistant restarted just after you switched the car off, before the trip was saved, the trip could stay open for good, and your next drive was added to it. It now closes as it should.
+- **A new drive is never added to the last one.** While a trip waits for the car's sensors after a restart, setting off again now starts a new trip instead of carrying on the old one, so the parked time between them is kept.
+- **No impossible speeds after downtime.** If the car kept driving while Home Assistant was down, the trip used to end at the last movement seen, so 100 km could show as taking 5 minutes. When the mileage shows it drove on, the trip now ends when Home Assistant came back, as before 0.36.4.
+- **Waiting in the car while it charges no longer spoils the charge.** If you sat in the car with the ignition on during a rapid charge, then drove off, the charge still took its end battery level from after the drive. The level as you move off is now kept. Re-importing history does the same.
+- **A trip can't be saved twice.** If the database was busy at the wrong moment, a trip that was saved again later could appear twice. A failed save is now undone completely.
+- **Missed driving isn't double counted.** While a trip is still waiting to be saved, the logbook no longer mistakes its miles for driving it missed.
+- **Renaming an old place called "Home" leaves Home's rates alone.** A place made before 0.36.4 can share a zone's name. Renaming it used to take the Home zone's charging rates and default trip type with it, so home charges lost their cost. They now stay with the zone.
+- **The "Where you go" map and the mileage chart show the period you picked.** Clicking one period and then another quickly could leave the slower first answer on screen.
+
 ## 0.36.4 (28 November 2026)
 
 Fixes for trips and charges that could be logged wrongly, or lost, without any warning. Nothing to change in your setup: update and reload the page.
